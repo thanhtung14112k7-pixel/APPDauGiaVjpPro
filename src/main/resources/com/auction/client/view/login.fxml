@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.Hyperlink?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.PasswordField?>
@@ -19,7 +20,7 @@
    <children>
       <Pane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="768.0" prefWidth="1024.0" style="-fx-background-color: #2b57fd;">
          <children>
-            <VBox alignment="CENTER" layoutX="256.0" layoutY="138.0" prefHeight="497.0" prefWidth="510.0" spacing="15.0" style="-fx-background-color: white; -fx-background-radius: 20; -fx-border-color: #E0E0E0; -fx-border-radius: 20;">
+            <VBox alignment="CENTER" layoutX="249.0" layoutY="138.0" prefHeight="554.0" prefWidth="510.0" spacing="15.0" style="-fx-background-color: white; -fx-background-radius: 20; -fx-border-color: #E0E0E0; -fx-border-radius: 20;">
                <children>
                   <ImageView fitHeight="100.0" fitWidth="100.0" pickOnBounds="true" preserveRatio="true">
                      <image>
@@ -44,8 +45,9 @@
                         </RadialGradient>
                      </textFill>
                   </Label>
-                  <TextField fx:id="usernameField" prefHeight="47.0" prefWidth="313.0" promptText="Account" style="-fx-background-color: #f4f4f4; -fx-background-radius: 8; -fx-border-color: transparent;" />
+                  <TextField fx:id="usernameField" prefHeight="47.0" prefWidth="313.0" promptText="Account or Email" style="-fx-background-color: #f4f4f4; -fx-background-radius: 8; -fx-border-color: transparent;" />
                   <PasswordField fx:id="passwordField" prefHeight="47.0" prefWidth="313.0" promptText="Password" style="-fx-background-color: #f4f4f4; -fx-background-radius: 8; -fx-border-color: transparent;" />
+                  <CheckBox mnemonicParsing="false" prefHeight="8.0" prefWidth="448.0" text="remember password" textFill="#cdc0c0" />
                   <Hyperlink prefHeight="24.0" prefWidth="116.0" text="Forgot password?" textAlignment="CENTER" />
                   <Hyperlink prefHeight="24.0" prefWidth="78.0" text="Register? " textAlignment="CENTER" />
                   <Button mnemonicParsing="false" onAction="#handleLogin" prefHeight="31.0" prefWidth="211.0" style="-fx-background-color: #007bff; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5;" text="Login" />
