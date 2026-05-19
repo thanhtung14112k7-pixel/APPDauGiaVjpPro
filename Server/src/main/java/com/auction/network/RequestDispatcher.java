@@ -1,5 +1,6 @@
 package com.auction.network;
 
+import com.auction.controller.AuctionController;
 import com.auction.controller.AuthController;
 import com.auction.dto.LoginRequest;
 import com.auction.dto.LoginResultDTO;
@@ -8,11 +9,14 @@ import com.auction.dto.RegisterRequest;
 import com.auction.dto.SocketRequest;
 import com.auction.dto.SocketResponse;
 import com.auction.dto.UserDTO;
+import com.auction.enums.ActionType;
 import com.auction.exception.AuthenticationException;
 import com.auction.manage.ConnectionManage;
 import com.auction.service.AuthorizationService;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+
+import static com.auction.enums.ActionType.*;
 
 /**
  * RequestDispatcher là bộ điều phối request phía Server.
@@ -29,6 +33,7 @@ public class RequestDispatcher {
     private final Gson gson = new Gson();
 
     private final AuthController authController = new AuthController();
+    private final AuctionController auctionController = new AuctionController();
     private final AuthorizationService authorizationService = new AuthorizationService();
 
     /**
@@ -47,7 +52,9 @@ public class RequestDispatcher {
                 return;
             }
 
+            ActionType actionType = parseAction(socketRequest.getAction());
             String action = socketRequest.getAction();
+
 
             if (!authorizationService.canAccess(action, session)) {
                 sendFailure(session, socketRequest,
@@ -56,18 +63,47 @@ public class RequestDispatcher {
                 return;
             }
 
-            switch (action) {
-                case "LOGIN":
+            switch (actionType) {
+                case LOGIN:
                     handleLogin(socketRequest, session);
                     break;
 
-                case "REGISTER":
+                case REGISTER:
                     handleRegister(socketRequest, session);
                     break;
 
-                case "LOGOUT":
+                case LOGOUT:
                     handleLogout(socketRequest, session);
                     break;
+
+                case GET_ACTIVE_AUCTIONS:
+                    handleGetActiveAuctions(socketRequest, session);
+                    break;
+
+                case GET_AUCTION_DETAIL:
+                    handleGetAuctionDetail(socketRequest, session);
+                    break;
+
+                case CREATE_AUCTION:
+                    handleCreateAuction(socketRequest, session);
+                    break;
+
+                case PLACE_BID:
+                    handlePlaceBid(socketRequest, session);
+                    break;
+
+                case SUBSCRIBE_AUCTION:
+                    handleSubscribeAuction(socketRequest, session);
+                    break;
+
+                case UNSUBSCRIBE_AUCTION:
+                    handleUnsubscribeAuction(socketRequest, session);
+                    break;
+
+                case CANCEL_AUCTION:
+                    handleCancelAuction(socketRequest, session);
+                    break;
+
 
                 default:
                     sendFailure(session, socketRequest,
@@ -184,6 +220,111 @@ public class RequestDispatcher {
         }
     }
 
+    /**
+     * Lấy danh sách các phiên đấu giá đang hoạt động.
+     */
+    private void handleGetActiveAuctions(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.getActiveAuctions();
+            sendSuccess(session, socketRequest, "Lấy danh sách phiên đấu giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể lấy danh sách phiên đấu giá.",
+                    "GET_ACTIVE_AUCTIONS_ERROR");
+        }
+    }
+
+    /**
+     * Lấy chi tiết một phiên đấu giá.
+     */
+    private void handleGetAuctionDetail(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.getAuctionDetail(socketRequest.getBody());
+            sendSuccess(session, socketRequest, "Lấy chi tiết phiên đấu giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể lấy chi tiết phiên đấu giá.",
+                    "GET_AUCTION_DETAIL_ERROR");
+        }
+    }
+
+    /**
+     * Tạo phiên đấu giá mới.
+     */
+    private void handleCreateAuction(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.createAuction(socketRequest.getBody(), session);
+            sendSuccess(session, socketRequest, "Tạo phiên đấu giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể tạo phiên đấu giá.",
+                    "CREATE_AUCTION_ERROR");
+        }
+    }
+
+    /**
+     * Đặt giá vào một phiên đấu giá.
+     */
+    private void handlePlaceBid(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.placeBid(socketRequest.getBody(), session);
+            sendSuccess(session, socketRequest, "Đặt giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể đặt giá.",
+                    "PLACE_BID_ERROR");
+        }
+    }
+
+    /**
+     * Đăng ký nhận realtime update của một phiên đấu giá.
+     */
+    private void handleSubscribeAuction(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.subscribeAuction(socketRequest.getBody(), session);
+            sendSuccess(session, socketRequest, "Đăng ký theo dõi phiên đấu giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể đăng ký theo dõi phiên đấu giá.",
+                    "SUBSCRIBE_AUCTION_ERROR");
+        }
+    }
+
+    /**
+     * Hủy đăng ký nhận realtime update của một phiên đấu giá.
+     */
+    private void handleUnsubscribeAuction(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.unsubscribeAuction(socketRequest.getBody(), session);
+            sendSuccess(session, socketRequest, "Hủy theo dõi phiên đấu giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể hủy theo dõi phiên đấu giá.",
+                    "UNSUBSCRIBE_AUCTION_ERROR");
+        }
+    }
+
+    /**
+     * Hủy một phiên đấu giá.
+     */
+    private void handleCancelAuction(SocketRequest socketRequest, ClientSession session) {
+        try {
+            Object result = auctionController.cancelAuction(socketRequest.getBody(), session);
+            sendSuccess(session, socketRequest, "Hủy phiên đấu giá thành công.", result);
+
+        } catch (Exception e) {
+            sendFailure(session, socketRequest,
+                    "Không thể hủy phiên đấu giá.",
+                    "CANCEL_AUCTION_ERROR");
+        }
+    }
+
     private void sendSuccess(ClientSession session, SocketRequest request, String message, Object body) {
         SocketResponse response = SocketResponse.success(
                 request.getRequestId(),
@@ -214,7 +355,23 @@ public class RequestDispatcher {
         session.sendMessage(gson.toJson(response));
     }
 
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
+    /**
+     * Chuyển action string trong SocketRequest sang ActionType.
+     * Nếu Client gửi action không nằm trong enum, trả null để dispatcher báo lỗi rõ ràng.
+     */
+    private ActionType parseAction(String action) {
+        try {
+            return ActionType.valueOf(action.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
+
+    /**
+     * Không dùng String.isBlank() để tránh lỗi nếu IDE compile nhầm language level thấp.
+     */
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
 }
