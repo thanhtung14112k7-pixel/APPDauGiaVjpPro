@@ -51,3 +51,32 @@
 
     -fx-letter-spacing: 1px;
 }
+/* --- CẤU HÌNH COMBOBOX CHO LIGHT MODE --- */
+
+/* 1. Màu nền và viền của ô chọn */
+.combo-custom {
+    -fx-background-color: #F0F4F8; /* Màu nền sáng, hơi xanh nhạt hoặc trắng xám */
+    -fx-background-radius: 5;
+    -fx-border-color: #D0D5DD;     /* Viền mảnh màu xám nhạt cho nổi bật */
+    -fx-border-radius: 5;
+}
+
+/* 2. ÉP CHỮ BÊN TRONG CỦA COMBOBOX THÀNH MÀU TỐI */
+.combo-custom .list-cell {
+    -fx-text-fill: #1D2939 !important; /* Màu chữ đen xám hiện đại */
+}
+
+/* 3. Đổi màu mũi tên tam giác nhỏ sang màu tối */
+.combo-custom .arrow {
+    -fx-background-color: #475467;
+}
+
+/* 4. Định hình danh sách xổ xuống (Popup) khi nhấn vào */
+.combo-custom .list-view {
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 5;
+}
+.combo-custom .list-view .list-cell:filled:hover {
+    -fx-background-color: #F2F4F7; /* Màu nền khi di chuột qua */
+    -fx-text-fill: #1D2939;
+}

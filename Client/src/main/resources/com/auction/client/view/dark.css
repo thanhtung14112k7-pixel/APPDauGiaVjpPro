@@ -54,3 +54,31 @@
 
     -fx-letter-spacing: 2px;
 }
+/* --- CẤU HÌNH COMBOBOX CHO DARK MODE --- */
+
+/* 1. Màu nền và viền của ô chọn */
+.combo-custom {
+    -fx-background-color: #333333; /* Màu xám đen giống y hệt các TextField trên hình */
+    -fx-background-radius: 5;      /* Bo góc nhẹ cho đồng bộ */
+    -fx-border-color: transparent;
+}
+
+/* 2. ÉP CHỮ BÊN TRONG CỦA COMBOBOX THÀNH MÀU TRẮNG */
+.combo-custom .list-cell {
+    -fx-text-fill: #FFFFFF !important;
+}
+
+/* 3. Đổi màu mũi tên tam giác nhỏ sang màu trắng */
+.combo-custom .arrow {
+    -fx-background-color: #FFFFFF;
+}
+
+/* 4. Định hình danh sách xổ xuống (Popup) khi nhấn vào */
+.combo-custom .list-view {
+    -fx-background-color: #333333;
+    -fx-background-radius: 5;
+}
+.combo-custom .list-view .list-cell:filled:hover {
+    -fx-background-color: #444444; /* Màu khi di chuột qua các lựa chọn */
+    -fx-text-fill: #FFFFFF;
+}

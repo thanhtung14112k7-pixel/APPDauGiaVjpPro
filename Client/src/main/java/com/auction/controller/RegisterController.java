@@ -55,13 +55,12 @@ public class RegisterController {
     @FXML
     private Pane rootContainer;
 
-    // Biến theo dõi theme hiện tại.
-    // false nghĩa là đang ở light mode, true nghĩa là đang ở dark mode.
-    private boolean isDarkMode = false;
+    // Biến cục bộ cũ đã gỡ bỏ để chuyển sang dùng quản lý tập trung ở SceneNavigator
 
     /**
      * initialize() được JavaFX tự động gọi sau khi load register.fxml.
      * Nhiệm vụ:
+     - Tự động áp dụng theme hiện tại của hệ thống tổng.
      - Đưa danh sách role vào ComboBox.
      - Mặc định chọn BIDDER.
      - Ẩn label lỗi ban đầu.
@@ -70,6 +69,19 @@ public class RegisterController {
      */
     @FXML
     public void initialize() {
+        // --- ĐOẠN CODE TỰ ĐỘNG ÁP DỤNG THEME KHI VỪA MỞ MÀN HÌNH REGISTER ---
+        rootContainer.getStylesheets().clear();
+        String currentPath = SceneNavigator.isAppDarkMode
+                ? "/com/auction/client/view/dark.css"
+                : "/com/auction/client/view/light.css";
+        try {
+            String css = Objects.requireNonNull(getClass().getResource(currentPath)).toExternalForm();
+            rootContainer.getStylesheets().add(css);
+        } catch (Exception e) {
+            System.out.println("Không thể nạp theme hệ thống: " + currentPath);
+        }
+        // ---------------------------------------------------------------------
+
         roleComboBox.getItems().setAll(UserRole.BIDDER, UserRole.SELLER);
         roleComboBox.setValue(UserRole.BIDDER);
 
@@ -157,15 +169,17 @@ public class RegisterController {
     public void toggleTheme(ActionEvent event) {
         rootContainer.getStylesheets().clear();
 
-        String path = isDarkMode
+        // Đọc trạng thái từ SceneNavigator thay vì biến cục bộ cũ để đồng bộ toàn app
+        String path = SceneNavigator.isAppDarkMode
                 ? "/com/auction/client/view/light.css"
                 : "/com/auction/client/view/dark.css";
 
         try {
             String css = Objects.requireNonNull(getClass().getResource(path)).toExternalForm();
             rootContainer.getStylesheets().add(css);
-            // Đảo trạng thái để lần bấm sau đổi sang theme còn lại.
-            isDarkMode = !isDarkMode;
+
+            // Cập nhật lại trạng thái tổng của toàn App để các màn hình khác dùng chung
+            SceneNavigator.isAppDarkMode = !SceneNavigator.isAppDarkMode;
         } catch (Exception e) {
             e.printStackTrace();
             showError("CSS file not found: " + path);
