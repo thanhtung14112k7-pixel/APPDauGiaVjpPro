@@ -16,5 +16,19 @@ public class BidTransactionDTO implements Serializable {
         this.status = status;
     }
 
-    // Getters và Setters...
+    public double getAmount() {
+        return amount;
+    }
+
+    public String getBidderName() {
+        return bidderName;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public LocalDateTime getTime() {
+        return time;
+    }
 }

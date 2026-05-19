@@ -200,11 +200,11 @@ public class AuctionListController {
         }
 
         /*
-         * TODO:
-         * Sau khi làm AuctionDetailController, thay đoạn này bằng điều hướng sang màn chi tiết.
-         * Cần truyền selectedAuction.getAuctionId() cho màn Auction Detail.
+         * Chuyển sang màn chi tiết phiên đấu giá.
+         * SceneNavigator sẽ load auction-detail.fxml,
+         * sau đó truyền selectedAuction.getAuctionId() vào AuctionDetailController.
          */
-        showInfo("Auction selected: " + selectedAuction.getAuctionId());
+        SceneNavigator.showAuctionDetail(selectedAuction.getAuctionId());
     }
 
     /**

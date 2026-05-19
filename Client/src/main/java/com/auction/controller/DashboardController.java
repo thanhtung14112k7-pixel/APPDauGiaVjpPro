@@ -71,13 +71,18 @@ public class DashboardController {
 
     @FXML
     private void handleAuctionList() {
-        showInfo("Chức năng Auction List sẽ được nối với màn hình danh sách đấu giá sau.");
+        /*
+         * Bidder vào màn danh sách các phiên đấu giá đang hoạt động.
+         */
+        SceneNavigator.showAuctionList();
     }
 
     @FXML
     private void handleSellerManagement() {
-        showInfo("Chức năng Seller Management sẽ được nối với màn hình quản lý sản phẩm sau.");
-    }
+        /*
+         * Seller vào màn quản lý/tạo phiên đấu giá cho vật phẩm.
+         */
+        SceneNavigator.showSellerItemManagement();    }
 
     @FXML
     private void handleAdminPanel() {

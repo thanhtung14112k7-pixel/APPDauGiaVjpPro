@@ -40,7 +40,7 @@ public class ClientHandler implements Runnable {
             // VÒNG LẶP SINH TỬ: Giữ kết nối liên tục.
             // Vòng lặp này chỉ dừng khi Client tắt App hoặc rớt mạng (reader trả về null)
             while ((requestJson = reader.readLine()) != null) {
-                if (requestJson.isBlank()) continue;
+                if (requestJson.trim().isEmpty()) continue;
 
                 // Bưng cục JSON và cái thẻ bàn ném cho Tổ trưởng (Dispatcher) xử lý
                 dispatcher.processRequest(requestJson, session);
@@ -51,7 +51,9 @@ public class ClientHandler implements Runnable {
         } finally {
             // 🔥 ĐÂY LÀ CHÌA KHÓA: Dù crash hay tắt app bình thường, block finally luôn chạy
             System.out.println("Hệ thống: Tiến hành kích hoạt luồng dọn dẹp tự động...");
-            session.close();
+            if (session != null) {
+                session.close();
+            }
         }
     }
 }

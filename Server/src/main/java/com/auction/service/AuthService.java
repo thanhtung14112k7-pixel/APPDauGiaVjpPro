@@ -95,7 +95,7 @@ public class AuthService {
                     ? userDAO.findByEmail(usernameOrEmail)
                     : userDAO.findByUsername(usernameOrEmail);
 
-            if (userOpt.isEmpty()) {
+            if (!userOpt.isPresent()) {
                 throw new AuthenticationException(AuthErrorCode.INVALID_CREDENTIALS);
             }
             user = userOpt.get();
@@ -127,7 +127,7 @@ public class AuthService {
         nên RequestDispatcher sẽ gọi ConnectionManage.removeConnection().
      */
     public void logout(String userId) throws AuthenticationException {
-        if (userId == null || userId.isBlank()) {
+        if (userId == null || userId.trim().isEmpty()) {
             throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
         }
 
@@ -135,7 +135,7 @@ public class AuthService {
         User user = userManage.getUserById(userId);
 
         // Nếu RAM chưa có thì kiểm tra trong database.
-        if (user == null && userDAO.findById(userId).isEmpty()) {
+        if (user == null && !userDAO.findById(userId).isPresent()) {
             throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
         }
 

@@ -68,7 +68,7 @@ public class ClientAuthApi {
 
             String responseJson = reader.readLine();
 
-            if (responseJson == null || responseJson.isBlank()) {
+            if (responseJson == null || responseJson.trim().isEmpty()) {
                 return SocketResponse.failure(
                         socketRequest.getRequestId(),
                         action,
