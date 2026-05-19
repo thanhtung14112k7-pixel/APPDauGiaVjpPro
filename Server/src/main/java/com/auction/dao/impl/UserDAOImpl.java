@@ -8,6 +8,8 @@ import com.auction.models.User.*;
 
 
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public class UserDAOImpl implements UserDAO {
@@ -182,6 +184,141 @@ public class UserDAOImpl implements UserDAO {
         }
     }
 
+    /**
+     * Rút tiền: Trừ thẳng vào số dư khả dụng (Available Balance)
+     * BẢO VỆ NGHIỆP VỤ: Chỉ trừ tiền nếu số tiền khả dụng hiện tại ĐỦ (available_balance >= amount)
+     */
+    @Override
+    public boolean withdrawAvailableBalance(String userId, double amount) {
+        String sql = "UPDATE users SET available_balance = available_balance - ? " +
+                "WHERE id = ? AND available_balance >= ? AND deleted_at IS NULL";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setDouble(1, amount);
+            stmt.setString(2, userId);
+            stmt.setDouble(3, amount); // Tham số kiểm tra điều kiện WHERE
+
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0; // Trả về true nếu trừ tiền thành công
+        } catch (SQLException e) {
+            System.err.println("❌ Lỗi Rút tiền tại UserDAOImpl: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Thêm người dùng vào danh sách phiên đấu giá mà họ đang theo dõi
+     * Lưu vào bảng trung gian: bidder_joined_auctions
+     *
+     * @param userId ID của bidder
+     * @param auctionId ID của phiên đấu giá
+     * @return true nếu thêm thành công, false nếu thất bại (vd: trùng lặp)
+     */
+    @Override
+    public boolean addJoinedAuction(String userId, String auctionId) {
+        String sql = "INSERT INTO bidder_joined_auctions (user_id, auction_id) VALUES (?, ?)";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, userId);
+            stmt.setString(2, auctionId);
+
+            int rowsAffected = stmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("[UserDAO] ✅ Bidder " + userId + " joined auction " + auctionId);
+            }
+            return rowsAffected > 0;
+
+        } catch (SQLException e) {
+            // Có thể bị lỗi KEY_DUPLICATE nếu bidder đã join rồi (ignore)
+            if (e.getErrorCode() == 1062 || e.getErrorCode() == 1586) {
+                System.out.println("[UserDAO] ℹ️ Bidder " + userId + " đã join auction " + auctionId + " rồi");
+                return false;
+            }
+            System.err.println("[UserDAO] ❌ Lỗi Add Joined Auction: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Xóa người dùng khỏi danh sách phiên đấu giá
+     * Xóa từ bảng trung gian: bidder_joined_auctions
+     *
+     * @param userId ID của bidder
+     * @param auctionId ID của phiên đấu giá
+     * @return true nếu xóa thành công, false nếu không tìm thấy record
+     */
+    @Override
+    public void removeJoinedAuction(String userId, String auctionId) {
+        String sql = "DELETE FROM bidder_joined_auctions WHERE user_id = ? AND auction_id = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, userId);
+            stmt.setString(2, auctionId);
+
+            int rowsAffected = stmt.executeUpdate();
+            if (rowsAffected > 0) {
+                System.out.println("[UserDAO] ✅ Bidder " + userId + " left auction " + auctionId);
+            } else {
+                System.out.println("[UserDAO] ℹ️ Record không tồn tại: " + userId + " - " + auctionId);
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[UserDAO] ❌ Lỗi Remove Joined Auction: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Lấy danh sách người dùng theo dạng phân trang (Pagination) để chống quá tải hệ thống
+     */
+    @Override
+    public List<User> findPaginated(int limit, int offset) {
+        String sql = "SELECT * FROM users WHERE deleted_at IS NULL LIMIT ? OFFSET ?";
+        List<User> users = new ArrayList<>();
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, limit);
+            stmt.setInt(2, offset);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    users.add(mapResultSetToUser(rs));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Lỗi tải danh sách phân trang: " + e.getMessage());
+        }
+        return users;
+    }
+
+    @Override
+    public boolean updateStatus(String userId, String name) {
+        // Câu lệnh SQL cập nhật cột status dựa trên ID người dùng
+        String sql = "UPDATE users SET status = ? WHERE id = ? AND deleted_at IS NULL";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            // Tham số 'name' ở đây chính là chuỗi đại diện cho trạng thái (ví dụ: "BANNED", "SUSPENDED", "ACTIVE")
+            stmt.setString(1, name);
+            stmt.setString(2, userId);
+
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0; // Trả về true nếu cập nhật thành công ít nhất 1 dòng
+
+        } catch (SQLException e) {
+            System.err.println("❌ Lỗi Update Status tại UserDAOImpl: " + e.getMessage());
+            return false;
+        }
+    }
+
     // --- CÁC HÀM TRUY VẤN ---
 
     private User mapResultSetToUser(ResultSet rs) throws SQLException {
@@ -200,14 +337,20 @@ public class UserDAOImpl implements UserDAO {
         java.time.LocalDateTime createdAt = rs.getTimestamp("created_at").toLocalDateTime();
         java.time.LocalDateTime updatedAt = rs.getTimestamp("updated_at").toLocalDateTime();
 
-        return switch (role) {
-            case BIDDER -> new Bidder(id, username, email, passwordHash, role, available, frozen, status, createdAt, updatedAt);
-            case SELLER -> {
+        switch (role) {
+            case BIDDER:
+                return new Bidder(id, username, email, passwordHash, role, available, frozen, status, createdAt, updatedAt);
+
+            case SELLER:
                 double rating = rs.getDouble("rating");
                 if (rs.wasNull()) rating = -1.0;
-                yield new Seller(id, username, email, passwordHash, role, available, frozen, status, createdAt, updatedAt, rating);
-            }
-            case ADMIN -> new Admin(id, username, email, passwordHash, role, available, frozen, status, createdAt, updatedAt);
-        };
+                return new Seller(id, username, email, passwordHash, role, available, frozen, status, createdAt, updatedAt, rating);
+
+            case ADMIN:
+                return new Admin(id, username, email, passwordHash, role, available, frozen, status, createdAt, updatedAt);
+
+            default:
+                throw new SQLException("Unsupported user role: " + role);
+        }
     }
 }
