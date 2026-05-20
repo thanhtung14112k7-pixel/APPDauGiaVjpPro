@@ -10,20 +10,20 @@ import java.io.IOException;
 import java.net.URL;
 
 /**
- * SceneNavigator là class chuyên dùng để chuyển màn hình.
+ * SceneNavigator la class chuyen dung de chuyen man hinh.
  *
- * Nhiệm vụ:
- * - Giữ Stage chính của ứng dụng.
- * - Load đúng file FXML theo từng màn hình.
- * - Tạo Scene mới hoặc thay root của Scene hiện tại.
- * - Giữ trạng thái cửa sổ khi chuyển màn, ví dụ maximized/fullscreen.
- * - Cho các Controller gọi các hàm chuyển màn như showLogin(), showDashboard(), showAuctionList().
+ * Nhiem vu:
+ * - Giu Stage chinh cua ung dung.
+ * - Load dung file FXML theo tung man hinh.
+ * - Tao Scene moi hoac thay root cua Scene hien tai.
+ * - Giu trang thai cua so khi chuyen man, vi du maximized/fullscreen.
+ * - Cho cac Controller goi cac ham chuyen man nhu showLogin(), showDashboard(), showAuctionList().
  */
 public class SceneNavigator {
     private static Stage mainStage;
 
     /*
-     * Biến lưu trạng thái theme toàn hệ thống.
+     * Bien luu trang thai theme toan he thong.
      * false = Light mode.
      * true = Dark mode.
      */
@@ -39,7 +39,7 @@ public class SceneNavigator {
     private static final String LIVE_BIDDING_VIEW = "/com/auction/client/view/live-bidding.fxml";
 
     private SceneNavigator() {
-        // Không cho tạo object SceneNavigator vì toàn bộ hàm trong class này là static.
+        // Khong cho tao object SceneNavigator vi toan bo ham trong class nay la static.
     }
 
     public static void setStage(Stage stage) {
@@ -78,8 +78,8 @@ public class SceneNavigator {
         FXMLLoader loader = loadSceneAndReturnLoader(AUCTION_DETAIL_VIEW, "Auction Detail");
 
         /*
-         * auction-detail.fxml tự tạo AuctionDetailController.
-         * Sau khi load xong, lấy controller ra và truyền auctionId vào.
+         * auction-detail.fxml tu tao AuctionDetailController.
+         * Sau khi load xong, lay controller ra va truyen auctionId vao.
          */
         AuctionDetailController controller = loader.getController();
         controller.setAuctionId(auctionId);
@@ -105,8 +105,8 @@ public class SceneNavigator {
             Parent root = loader.load();
 
             /*
-             * Nếu chưa có Scene, tạo Scene mới.
-             * Nếu đã có Scene, chỉ thay root để giữ trạng thái cửa sổ hiện tại.
+             * Neu chua co Scene, tao Scene moi.
+             * Neu da co Scene, chi thay root de giu trang thai cua so hien tai.
              */
             if (mainStage.getScene() == null) {
                 Scene scene = new Scene(root, 900, 600);

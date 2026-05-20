@@ -44,9 +44,31 @@ public class LoginController {
     @FXML
     private Pane rootContainer;
 
-    // Biến theo dõi theme hiện tại.
-    // false nghĩa là đang ở light mode, true nghĩa là đang ở dark mode.
-    private boolean isDarkMode = false;
+    // Biến cục bộ cũ đã gỡ bỏ để chuyển sang dùng quản lý tập trung ở SceneNavigator
+
+    /**
+     * initialize() được JavaFX tự động gọi sau khi load login.fxml.
+     * Nhiệm vụ:
+     - Tự động áp dụng theme hiện tại của hệ thống tổng từ SceneNavigator.
+     - Ẩn label lỗi ban đầu.
+     */
+    @FXML
+    public void initialize() {
+        // --- ĐOẠN CODE TỰ ĐỘNG ÁP DỤNG THEME KHI VỪA MỞ MÀN HÌNH LOGIN ---
+        rootContainer.getStylesheets().clear();
+        String currentPath = SceneNavigator.isAppDarkMode
+                ? "/com/auction/client/view/dark.css"
+                : "/com/auction/client/view/light.css";
+        try {
+            String css = Objects.requireNonNull(getClass().getResource(currentPath)).toExternalForm();
+            rootContainer.getStylesheets().add(css);
+        } catch (Exception e) {
+            System.out.println("Không thể nạp theme hệ thống: " + currentPath);
+        }
+        // ---------------------------------------------------------------------
+
+        errorLabel.setVisible(false);
+    }
 
     /**
      * Đổi theme sáng/tối cho màn hình Login.
@@ -56,15 +78,17 @@ public class LoginController {
     public void toggleTheme(ActionEvent event) {
         rootContainer.getStylesheets().clear();
 
-        String path = isDarkMode
+        // Đọc trạng thái từ SceneNavigator thay vì biến cục bộ cũ để đồng bộ toàn app
+        String path = SceneNavigator.isAppDarkMode
                 ? "/com/auction/client/view/light.css"
                 : "/com/auction/client/view/dark.css";
 
         try {
             String css = Objects.requireNonNull(getClass().getResource(path)).toExternalForm();
             rootContainer.getStylesheets().add(css);
-            // Đảo trạng thái để lần bấm sau đổi sang theme còn lại.
-            isDarkMode = !isDarkMode;
+
+            // Cập nhật lại trạng thái tổng của toàn App để các màn hình khác dùng chung
+            SceneNavigator.isAppDarkMode = !SceneNavigator.isAppDarkMode;
         } catch (Exception e) {
             System.out.println("Không tìm thấy file CSS tại " + path);
             e.printStackTrace();
@@ -94,7 +118,7 @@ public class LoginController {
         // Kiểm tra rỗng ở Client để tránh gửi request thiếu dữ liệu lên Server.
         // Server vẫn phải validate lại, vì dữ liệu từ Client không bao giờ được tin tuyệt đối.
         if (username.isEmpty() || password.isEmpty()) {
-            showError("Vui lòng nhập đầy đủ tài khoản và mật khẩu.");
+            showError("Please enter your full username and passwords.");
             return;
         }
 
