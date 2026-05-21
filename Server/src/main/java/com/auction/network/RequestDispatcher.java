@@ -45,15 +45,15 @@ public class RequestDispatcher {
         try {
             socketRequest = gson.fromJson(requestJson, SocketRequest.class);
 
-            if (socketRequest == null || isBlank(socketRequest.getAction())) {
+            if (socketRequest == null || isBlank(socketRequest.getAction().toString())) {
                 sendFailure(session, null, null,
                         "Request không hợp lệ.",
                         "BAD_REQUEST");
                 return;
             }
 
-            ActionType actionType = parseAction(socketRequest.getAction());
-            String action = socketRequest.getAction();
+            ActionType actionType = parseAction(socketRequest.getAction().toString());
+            String action = socketRequest.getAction().toString();
 
 
             if (!authorizationService.canAccess(action, session)) {
@@ -192,8 +192,6 @@ public class RequestDispatcher {
      */
     private void handleLogout(SocketRequest socketRequest, ClientSession session) {
         try {
-            LogoutRequest logoutRequest = gson.fromJson(socketRequest.getBody(), LogoutRequest.class);
-
             String userId = session.getUserId();
 
             if (userId == null) {
@@ -205,14 +203,14 @@ public class RequestDispatcher {
 
             authController.logout(userId);
 
-            ConnectionManage.getInstance().removeConnection(userId, session);
-            session.clearLoginInfo();
-
+            // 1. Bắn tin báo thành công cho client trước khi ngắt kết nối vật lý
             sendSuccess(session, socketRequest, "Đăng xuất thành công.", null);
+
+            // 2. Gọi hàm đóng an toàn để thực hiện tháo gỡ ConnectionManage, LiveRoomManage và đóng Socket
+            session.close();
 
         } catch (AuthenticationException e) {
             sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
-
         } catch (Exception e) {
             sendFailure(session, socketRequest,
                     "Đăng xuất thất bại do lỗi hệ thống.",
@@ -338,7 +336,7 @@ public class RequestDispatcher {
 
     private void sendFailure(ClientSession session, SocketRequest request, String message, String errorCode) {
         String requestId = request == null ? null : request.getRequestId();
-        String action = request == null ? null : request.getAction();
+        String action = request == null ? null : request.getAction().toString();
 
         sendFailure(session, requestId, action, message, errorCode);
     }
@@ -347,7 +345,7 @@ public class RequestDispatcher {
                              String message, String errorCode) {
         SocketResponse response = SocketResponse.failure(
                 requestId,
-                action,
+                ActionType.valueOf(action),
                 message,
                 errorCode
         );

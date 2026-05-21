@@ -1,5 +1,6 @@
 package com.auction.dto;
 
+import com.auction.enums.ActionType;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 
@@ -22,7 +23,7 @@ public class SocketResponse {
 
     private String requestId;
     private String type;
-    private String action;
+    private ActionType action;
     private boolean success;
     private String message;
     private String errorCode;
@@ -36,7 +37,7 @@ public class SocketResponse {
     public SocketResponse() {
     }
 
-    public SocketResponse(String requestId, String type, String action,
+    public SocketResponse(String requestId, String type, ActionType action,
                           boolean success, String message, String errorCode,
                           JsonElement body) {
         this.requestId = requestId;
@@ -51,7 +52,7 @@ public class SocketResponse {
     /**
      * Tạo response thành công cho một request cụ thể.
      */
-    public static SocketResponse success(String requestId, String action, String message, Object body) {
+    public static SocketResponse success(String requestId, ActionType action, String message, Object body) {
         return new SocketResponse(
                 requestId,
                 TYPE_RESPONSE,
@@ -66,7 +67,7 @@ public class SocketResponse {
     /**
      * Tạo response thất bại cho một request cụ thể.
      */
-    public static SocketResponse failure(String requestId, String action, String message, String errorCode) {
+    public static SocketResponse failure(String requestId, ActionType action, String message, String errorCode) {
         return new SocketResponse(
                 requestId,
                 TYPE_RESPONSE,
@@ -82,7 +83,7 @@ public class SocketResponse {
      * Tạo realtime event do Server tự gửi.
      * Event không thuộc request cụ thể nào nên requestId = null.
      */
-    public static SocketResponse event(String action, String message, Object body) {
+    public static SocketResponse event(ActionType action, String message, Object body) {
         return new SocketResponse(
                 null,
                 TYPE_EVENT,
@@ -103,7 +104,7 @@ public class SocketResponse {
     }
 
     public String getAction() {
-        return action;
+        return action.toString();
     }
 
     public boolean isSuccess() {

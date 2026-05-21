@@ -5,6 +5,7 @@ import com.auction.dto.LogoutRequest;
 import com.auction.dto.RegisterRequest;
 import com.auction.dto.SocketRequest;
 import com.auction.dto.SocketResponse;
+import com.auction.enums.ActionType;
 import com.auction.enums.UserRole;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -62,7 +63,7 @@ public class ClientAuthApi {
             BufferedReader reader = network.getReader();
 
             JsonObject body = gson.toJsonTree(requestBody).getAsJsonObject();
-            socketRequest = new SocketRequest(action, body);
+            socketRequest = new SocketRequest(ActionType.valueOf(action), body);
 
             writer.println(gson.toJson(socketRequest));
 
@@ -71,7 +72,7 @@ public class ClientAuthApi {
             if (responseJson == null || responseJson.trim().isEmpty()) {
                 return SocketResponse.failure(
                         socketRequest.getRequestId(),
-                        action,
+                        ActionType.valueOf(action),
                         "The server did not return any data.",
                         "EMPTY_RESPONSE"
                 );
@@ -86,7 +87,7 @@ public class ClientAuthApi {
 
             return SocketResponse.failure(
                     requestId,
-                    action,
+                    ActionType.valueOf(action),
                     "Cannot connect to the server. Please check whether the server is running.",
                     "CONNECTION_ERROR"
             );

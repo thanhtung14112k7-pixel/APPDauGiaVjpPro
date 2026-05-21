@@ -187,7 +187,7 @@ public class ClientAuctionApi {
              * actionType.name() tạo action chuẩn theo enum, ví dụ "PLACE_BID".
              * body là dữ liệu chi tiết của action đó.
              */
-            socketRequest = new SocketRequest(actionType.name(), body);
+            socketRequest = new SocketRequest(ActionType.valueOf(actionType.name()), body);
             writer.println(gson.toJson(socketRequest));     //Chuyển SocketRequest thành JSON string rồi gửi qua socket.
 
             /*
@@ -203,7 +203,7 @@ public class ClientAuctionApi {
             if (responseJson == null || responseJson.trim().isEmpty()) {
                 return SocketResponse.failure(
                         socketRequest.getRequestId(),
-                        actionType.name(),
+                        ActionType.valueOf(actionType.name()),
                         "The server did not return any data.",
                         "EMPTY_RESPONSE"
                 );
@@ -230,7 +230,7 @@ public class ClientAuctionApi {
 
             return SocketResponse.failure(
                     requestId,
-                    actionType.name(),
+                    ActionType.valueOf(actionType.name()),
                     "Cannot connect to the server. Please check whether the server is running.",
                     "CONNECTION_ERROR"
             );
