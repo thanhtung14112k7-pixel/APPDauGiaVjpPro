@@ -1,28 +1,52 @@
 package com.auction.manage;
 
+import com.auction.enums.ActionType;
 import com.auction.network.ClientSession;
+import com.auction.server.event.AuctionObserver;
+import com.auction.server.event.AuctionEvent;
+import com.auction.server.event.AuctionEventType;
+import com.auction.dto.BidTransactionDTO;
+import com.auction.dto.SocketResponse;
+import com.google.gson.Gson;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * LiveRoomManage: Quản lý tập trung tất cả socket connections theo phòng (auctionId)
- *
- * Nguồn: Đề xuất kiến trúc LiveRoom thay thế Observer Pattern
- * Lợi ích:
- * - Broadcast message đến tất cả clients trong phòng dễ dàng
- * - Hỗ trợ 1 user nhiều connections (mobile + web)
- * - Clear separation of concerns: Auction chỉ focus logic, broadcast ở đây
- * - Thread-safe với ConcurrentHashMap + CopyOnWriteArrayList
+ * ============================================================
+ * LiveRoomManage - Quản lý Socket Connections & Broadcast Events
+ * ============================================================
+ * TRƯỚC: Quản lý tập trung tất cả socket connections theo phòng (auctionId)
+ *        Chỉ có method: joinRoom(), leaveRoom(), broadcast()
+ * BÂY GIỜ (Refactored with Observer Pattern):
+ * - Implement AuctionObserver để lắng nghe sự kiện từ AuctionEventBus
+ * - Khi nhận event, tự động broadcast đến tất cả clients trong phòng
+ * - Giải phóng AuctionService khỏi trách nhiệm quản lý client notifications
+ * Lợi ích của cách này:
+ * ✅ Decoupling: AuctionService không cần biết về ClientSession
+ * ✅ Scalability: Dễ thêm các Observer khác (NotificationService, AnalyticsService)
+ * ✅ Maintainability: Tất cả broadcast logic tập trung ở 1 chỗ
+ * ✅ Thread-safe: ConcurrentHashMap + CopyOnWriteArrayList
+ * SOLID Principles:
+ * - Single Responsibility: Chỉ quản lý broadcast & client sessions
+ * - Open/Closed: Mở cho extension (thực thi AuctionObserver), đóng cho modification
+ * - Dependency Inversion: Phụ thuộc vào AuctionObserver interface, không concrete class
  */
-public class LiveRoomManage {
+public class LiveRoomManage implements AuctionObserver {
     private static volatile LiveRoomManage instance;
 
     // Key: auctionId, Value: List<ClientSession> đang theo dõi phiên
     private final Map<String, CopyOnWriteArrayList<ClientSession>> rooms
         = new ConcurrentHashMap<>();
 
-    private LiveRoomManage() {}
+    // JSON serializer - dùng để serialize SocketResponse
+    private static final Gson gson = new Gson();
+
+    private LiveRoomManage() {
+        System.out.println("[LiveRoom] 🚀 LiveRoomManage khởi động");
+    }
 
     /**
      * Singleton pattern - Double-checked locking
@@ -39,6 +63,185 @@ public class LiveRoomManage {
         }
         return temp;
     }
+
+    // ============================================================
+    // OBSERVER PATTERN: Implement AuctionObserver interface
+    // ============================================================
+
+    /**
+     * Callback gọi khi AuctionEventBus publish sự kiện
+     * Mục đích:
+     * - Lắng nghe tất cả sự kiện từ AuctionService, AuctionManage
+     * - Dựa vào event.type, broadcast message phù hợp đến clients
+     * - Giải phóng AuctionService khỏi trách nhiệm quản lý client notifications
+     * Flow:
+     * 1. AuctionService: Phát sinh sự kiện → publish(event) to EventBus
+     * 2. AuctionEventBus: Gửi event đến tất cả observers
+     * 3. LiveRoomManage.update(): Nhận event, xử lý, broadcast đến clients
+     *
+     * @param event Sự kiện đã xảy ra
+     */
+    @Override
+    public void update(AuctionEvent event) {
+        if (event == null) {
+            return;
+        }
+
+        String roomId = event.getRoomId();
+        AuctionEventType eventType = event.getType();
+
+        System.out.println("[LiveRoom] 📨 Nhận event: " + eventType + " từ phòng " + roomId);
+
+        // Switch-case xử lý từng loại sự kiện
+        switch (eventType) {
+            case NEW_BID:
+                handleNewBidEvent(roomId, event.getPayload());
+                break;
+
+            case TIMER_TICK:
+                handleTimerTickEvent(roomId, event.getPayload());
+                break;
+
+            case STATUS_CHANGED:
+                handleStatusChangedEvent(roomId, event.getPayload());
+                break;
+
+            case VIEWER_COUNT_CHANGED:
+                handleViewerCountChangedEvent(roomId, event.getPayload());
+                break;
+
+            default:
+                System.out.println("[LiveRoom] ⚠️ Event type không được xử lý: " + eventType);
+        }
+    }
+
+    /**
+     * Xử lý sự kiện: Có người đặt giá mới (NEW_BID)
+     * Payload: BidTransactionDTO
+     * Action: Broadcast SocketResponse.event("BID_UPDATED", ...) đến tất cả clients
+     *
+     * @param roomId auctionId
+     * @param payload BidTransactionDTO từ event
+     */
+    private void handleNewBidEvent(String roomId, Object payload) {
+        if (!(payload instanceof BidTransactionDTO bidData)) {
+            System.err.println("[LiveRoom] ❌ NEW_BID payload không phải BidTransactionDTO");
+            return;
+        }
+
+        // Tạo SocketResponse dùng factory method: SocketResponse.event()
+        SocketResponse response = SocketResponse.event(
+                ActionType.BID_UPDATE,
+                "Có lượt đặt giá mới! " + bidData.getBidderName() + " đặt giá: " + bidData.getAmount(),
+                bidData
+        );
+
+        // Broadcast response đến tất cả clients trong phòng
+        String jsonMessage = gson.toJson(response);
+        broadcast(roomId, jsonMessage);
+
+        System.out.println("[LiveRoom] 💰 Broadcast NEW_BID event: " + bidData.getBidderName()
+            + " đặt giá " + bidData.getAmount());
+    }
+
+    /**
+     * Xử lý sự kiện: Countdown thời gian (TIMER_TICK)
+     * Payload: Integer (số giây còn lại) hoặc Map với chi tiết thời gian
+     * Action: Broadcast thời gian countdown đến clients (update UI real-time)
+     *
+     * @param roomId auctionId
+     * @param payload Thông tin thời gian
+     */
+    private void handleTimerTickEvent(String roomId, Object payload) {
+        // ⏳ PLACEHOLDER - Implement bước tiếp theo
+        //
+        if (payload instanceof Number secondsRemaining) {
+            SocketResponse response = SocketResponse.event(
+                    ActionType.TIME_UPDATE,
+                    "Thời gian còn lại: " + secondsRemaining.longValue() + " giây",
+                    Map.of("roomId", roomId, "secondsRemaining", secondsRemaining.longValue())
+            );
+            broadcast(roomId, gson.toJson(response));
+        }
+    }
+
+    /**
+     * Xử lý sự kiện: Trạng thái phiên thay đổi (STATUS_CHANGED)
+     * Payload: Map hoặc Object chứa {oldStatus, newStatus}
+     * Action: Broadcast trạng thái mới đến clients (OPEN -> RUNNING -> FINISHED)
+     *
+     * @param roomId auctionId
+     * @param payload Thông tin trạng thái cũ/mới
+     */
+    private void handleStatusChangedEvent(String roomId, Object payload) {
+        // 🔄 PLACEHOLDER - Implement bước tiếp theo
+        //
+        // VD implementation:
+        // 🔥 THAY ĐỔI TẠI ĐÂY: Nhận diện Map chứa thông tin chi tiết trạng thái
+        if (payload instanceof Map<?, ?> statusMap) {
+            String newStatus = (String) statusMap.get("newStatus");
+            String highestId = (String) statusMap.get("highestId");
+            Double highestPrice = (Double) statusMap.get("highestPrice");
+            String message = (String) statusMap.get("message");
+
+            // Tạo cấu trúc Body phản hồi đồng nhất gửi xuống Client
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("roomId", roomId);
+            responseBody.put("newStatus", newStatus);
+            responseBody.put("highestId", highestId != null ? highestId : "");
+            responseBody.put("highestPrice", highestPrice != null ? highestPrice : 0.0);
+
+            // Đóng gói vào mẫu SocketResponse
+            SocketResponse response = SocketResponse.event(
+                    ActionType.STATUS_UPDATED,
+                    message != null ? message : "Trạng thái phiên thay đổi sang: " + newStatus,
+                    responseBody
+            );
+
+            String jsonMessage = gson.toJson(response);
+            broadcast(roomId, jsonMessage);
+
+            System.out.println("[LiveRoom] 🔄 STATUS_CHANGED: " + newStatus
+                    + " | Winner: " + highestId + " | Price: " + highestPrice);
+
+            // 🔥 TỰ ĐỘNG DỌN DẸP PHÒNG MẠNG KHI PHIÊN KẾT THÚC HOẶC BỊ HỦY
+            if ("FINISHED".equals(newStatus) || "CANCELED".equals(newStatus)) {
+                clearRoom(roomId);
+            }
+        }
+        else {
+            System.err.println("[LiveRoom] ❌ STATUS_CHANGED payload không hợp lệ");
+        }
+
+    }
+
+    /**
+     * Xử lý sự kiện: Số người xem thay đổi (VIEWER_COUNT_CHANGED)
+     * Payload: Integer (số người xem mới) hoặc Map với chi tiết
+     * Action: Broadcast số viewer đến clients (update viewer count trên UI)
+     *
+     * @param roomId auctionId
+     * @param payload Số lượng viewer hoặc thông tin chi tiết
+     */
+    private void handleViewerCountChangedEvent(String roomId, Object payload) {
+        // 👥 PLACEHOLDER - Implement bước tiếp theo
+        //
+        // VD implementation:
+         if (payload instanceof Integer) {
+             Integer viewerCount = (Integer) payload;
+             SocketResponse response = SocketResponse.event(
+                 ActionType.VIEWER_COUNT_UPDATED,
+                 "Hiện có " + viewerCount + " người xem phiên",
+                 Map.of("viewerCount", viewerCount)
+             );
+             String jsonMessage = gson.toJson(response);
+             broadcast(roomId, jsonMessage);
+         }
+    }
+
+    // ============================================================
+    // CÁC METHOD HOẠT ĐỘNG QUẢN LÝ PHÒNG (KHÔNG ĐỔI)
+    // ============================================================
 
     /**
      * Join vào phòng đấu giá (Subscribe)

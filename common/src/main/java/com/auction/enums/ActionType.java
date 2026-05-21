@@ -17,6 +17,11 @@ public enum ActionType {
     PLACE_BID,                  // đặt giá vào 1 phiên dddassu giá, chỉ bidder
     SUBSCRIBE_AUCTION,          // đăng kí nhận Realtime Update của 1 phiên đấu giá, dùng khi Client mở màn hình chi tiết phiên
     UNSUBSCRIBE_AUCTION,        // hủy đăng kí Realtime Update, dùng khi Client rời màn hình chi tiết phiên
-    CANCEL_AUCTION              // hủy phiên đấu giá, seller hoặc admin được gọi, sau này nên kiểm tra thêm Seller chỉ dc xóa của chính mình
+    CANCEL_AUCTION,              // hủy phiên đấu giá, seller hoặc admin được gọi, sau này nên kiểm tra thêm Seller chỉ dc xóa của chính mình
+    BID_UPDATE,
+    TIME_UPDATE,
+    STATUS_UPDATED,
+    VIEWER_COUNT_UPDATED,
+
 
 }

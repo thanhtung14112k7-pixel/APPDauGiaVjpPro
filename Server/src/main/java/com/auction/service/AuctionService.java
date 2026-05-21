@@ -17,11 +17,12 @@ import com.auction.network.ClientSession;
 import com.auction.models.Auction.BidTransaction;
 import com.auction.models.Item.Item;
 import com.auction.models.User.Bidder;
+import com.auction.server.event.AuctionEvent;
+import com.auction.server.event.AuctionEventBus;
+import com.auction.server.event.AuctionEventType;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class AuctionService {
@@ -141,9 +142,21 @@ public class AuctionService {
                             }
                         }
 
-                        // 6. Broadcast thông báo qua LiveRoom cho tất cả clients trong phòng
-                        String msg = "Thông báo: " + bidder.getUsername() + " đã đặt giá " + amount;
-                        LiveRoomManage.getInstance().broadcast(auctionId, msg);
+                        BidTransactionDTO bidData = new BidTransactionDTO(
+                                bidder.getUsername(),
+                                amount,
+                                LocalDateTime.now(),
+                                BidStatus.ACCEPTED.name()
+                        );
+
+                        AuctionEvent bidEvent = new AuctionEvent(
+                                auctionId,
+                                AuctionEventType.NEW_BID,
+                                bidData
+                        );
+
+                        AuctionEventBus.getInstance().publish(bidEvent);
+                        System.out.println("[AuctionService] 📢 Publish NEW_BID event");
                         return true;
                     } else {
                         // Nếu update Auction DB lỗi -> Rollback tiền lại cho Bidder
@@ -183,7 +196,7 @@ public class AuctionService {
             double finalPrice = auction.getCurrentPrice();
             String sellerId = auction.getSellerId();
 
-            String notification;
+            String statusMessage;
 
             if (winnerId != null) {
                 // 1. Khấu trừ vĩnh viễn tiền trong cột đóng băng của người thắng
@@ -192,12 +205,12 @@ public class AuctionService {
                     // 2. Cộng tiền vào cột khả dụng cho người bán
                     userDAO.addAvailableBalance(sellerId, finalPrice);
                 }
-                notification = "Thông báo: Phiên " + auctionId + " ĐÃ KẾT THÚC. Người thắng: ID " + winnerId + " với giá: " + finalPrice;
+                statusMessage = "Thông báo: Phiên " + auctionId + " ĐÃ KẾT THÚC. Người thắng: ID " + winnerId + " với giá: " + finalPrice;
                 // 🔥 SỬA BỔ SUNG: Chuyển trạng thái Item thành SOLD (Đã bán)
                 itemDAO.updateStatus(auction.getItemId(), com.auction.enums.ItemStatus.SOLD.name());
                 productManage.getProduct(auction.getItemId()).setStatus(com.auction.enums.ItemStatus.SOLD);
             } else {
-                notification = "Thông báo: Phiên " + auctionId + " ĐÃ KẾT THÚC. Không có người đặt giá.";
+                statusMessage = "Thông báo: Phiên " + auctionId + " ĐÃ KẾT THÚC. Không có người đặt giá.";
                 // 🔥 SỬA BỔ SUNG: Không ai mua -> Trả tự do cho Item thành ACTIVE
                 itemDAO.updateStatus(auction.getItemId(), com.auction.enums.ItemStatus.ACTIVE.name());
                 var ramItem = productManage.getProduct(auction.getItemId());
@@ -210,8 +223,20 @@ public class AuctionService {
             // 3. Cập nhật trạng thái kết thúc trong DB
             auctionDAO.updateStatus(auctionId, AuctionStatus.FINISHED.name());
 
-            // 4. Broadcast thông báo kết thúc
-            LiveRoomManage.getInstance().broadcast(auctionId, notification);
+            // 4. ✨ PUBLISH STATUS_CHANGED EVENT ✨
+            Map<String, Object> statusPayload = new HashMap<>();
+            statusPayload.put("newStatus", AuctionStatus.FINISHED.name());
+            statusPayload.put("highestId", winnerId);       // Đồng bộ tên khóa
+            statusPayload.put("highestPrice", finalPrice);   // Đồng bộ tên khóa
+            statusPayload.put("message", statusMessage);
+
+            AuctionEvent statusEvent = new AuctionEvent(
+                    auctionId,
+                    AuctionEventType.STATUS_CHANGED,
+                    statusPayload
+            );
+            AuctionEventBus.getInstance().publish(statusEvent);
+            System.out.println("[AuctionService] 📢 Publish STATUS_CHANGED (FINISHED) event");
 
             // 5. Xóa phòng (không ai cần broadcast nữa)
             LiveRoomManage.getInstance().clearRoom(auctionId);
@@ -377,9 +402,22 @@ public class AuctionService {
                 ramItem.setStatus(com.auction.enums.ItemStatus.ACTIVE);
             }
 
-            // 3. Broadcast thông báo cho những người đang theo dõi
-            LiveRoomManage.getInstance().broadcast(auctionId,
-                    "Thông báo: Phiên đấu giá bị hủy do: " + reason);
+            // 🔥 THAY ĐỔI TẠI ĐÂY: Đồng bộ các Khóa dữ liệu khi hủy phiên
+            Map<String, Object> cancelPayload = new HashMap<>();
+            cancelPayload.put("newStatus", AuctionStatus.CANCELED.name());
+            cancelPayload.put("highestId", currentWinnerId);
+            cancelPayload.put("highestPrice", auction.getCurrentPrice());
+            cancelPayload.put("message", "Phiên đấu giá đã bị Admin cưỡng chế hủy bỏ. Lý do: " + reason);
+
+            AuctionEvent cancelEvent = new AuctionEvent(
+                    auctionId,
+                    AuctionEventType.STATUS_CHANGED,
+                    cancelPayload
+            );
+            AuctionEventBus.getInstance().publish(cancelEvent);
+            System.out.println("[AuctionService] 📢 Publish STATUS_CHANGED (CANCELED) event");
+
+            AuctionEventBus.getInstance().publish(cancelEvent);
 
             // 4. Xóa phòng
             LiveRoomManage.getInstance().clearRoom(auctionId);

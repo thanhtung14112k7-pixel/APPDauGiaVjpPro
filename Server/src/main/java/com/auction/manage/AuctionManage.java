@@ -2,10 +2,16 @@ package com.auction.manage;
 
 import com.auction.enums.AuctionStatus;
 import com.auction.models.Auction.Auction;
+import com.auction.server.event.AuctionEvent;
+import com.auction.server.event.AuctionEventBus;
+import com.auction.server.event.AuctionEventType;
 import com.auction.service.AuctionService;
+import org.jetbrains.annotations.NotNull;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -91,12 +97,26 @@ public class AuctionManage {
                 // 2. Refresh trạng thái theo thời gian thực
                 auction.refreshStatus(now);
                 AuctionStatus newStatus = auction.getStatus();
+                String auctionId = auction.getId();
 
-                // 3. Chỉ thông báo 1 lần khi VỪA MỚI chuyển trạng thái
+                // 1. Tự động phát sự kiện TIMER_TICK mỗi giây cho phòng đang chạy
+                if (newStatus == RUNNING) {
+                    long secondsLeft = Duration.between(now, auction.getEndTime()).toSeconds();
+                    if (secondsLeft < 0) secondsLeft = 0;
+
+                    AuctionEvent timerEvent = new AuctionEvent(
+                            auctionId,
+                            AuctionEventType.TIMER_TICK,
+                            secondsLeft
+                    );
+                    AuctionEventBus.getInstance().publish(timerEvent);
+                }
+
+                // 2. Thông báo khi VỪA MỚI chuyển trạng thái từ OPEN sang RUNNING
                 if (oldStatus == OPEN && newStatus == RUNNING) {
-                    // THAY THẾ NOTIFY CŨ BẰNG LIVEROOMMANAGE
-                    String jsonMsg = "{\"action\": \"AUCTION_STARTED\", \"auctionId\": \"" + auction.getId() + "\", \"message\": \"Phiên đấu giá ĐÃ BẮT ĐẦU! Hãy đặt giá ngay!\"}";
-                    LiveRoomManage.getInstance().broadcast(auction.getId(), jsonMsg);
+                    // 🔥 THAY ĐỔI TẠI ĐÂY: Đồng bộ các Khóa dữ liệu khi phiên chính thức khai hỏa
+                    AuctionEvent startEvent = getAuctionEvent(auction, auctionId);
+                    AuctionEventBus.getInstance().publish(startEvent);
                 }
 
                 // 4. Nếu VỪA MỚI kết thúc thì gọi hàm xử lý
@@ -105,5 +125,21 @@ public class AuctionManage {
                 }
             }
         }, 0, 1, TimeUnit.SECONDS); // Quét mỗi giây 1 lần
+    }
+
+    @NotNull
+    private static AuctionEvent getAuctionEvent(Auction auction, String auctionId) {
+        Map<String, Object> statusPayload = new HashMap<>();
+        statusPayload.put("newStatus", AuctionStatus.RUNNING.name());
+        statusPayload.put("highestId", auction.getHighestBidderId()); // Thường là null tại vạch xuất phát
+        statusPayload.put("highestPrice", auction.getCurrentPrice());  // Giá khởi điểm ban đầu
+        statusPayload.put("message", "Phiên đấu giá ĐÃ BẮT ĐẦU! Hãy nhanh tay đặt giá!");
+
+        AuctionEvent startEvent = new AuctionEvent(
+                auctionId,
+                AuctionEventType.STATUS_CHANGED,
+                statusPayload
+        );
+        return startEvent;
     }
 }

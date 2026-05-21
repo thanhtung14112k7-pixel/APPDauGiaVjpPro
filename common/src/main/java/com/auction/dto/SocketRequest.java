@@ -2,6 +2,7 @@ package com.auction.dto;
 
 import java.util.UUID;
 
+import com.auction.enums.ActionType;
 import com.google.gson.JsonObject;
 
 /**
@@ -16,7 +17,7 @@ import com.google.gson.JsonObject;
 
 public class SocketRequest {
     private String requestId;
-    private String action;
+    private ActionType action;
     private String body;
 
     /**
@@ -29,7 +30,7 @@ public class SocketRequest {
       Dùng khi Client tạo request mới.
       requestId tự sinh để Client/Server có thể theo dõi request.
      */
-    public SocketRequest(String action, JsonObject body) {
+    public SocketRequest(ActionType action, JsonObject body) {
         this.requestId = UUID.randomUUID().toString();
         this.action = action;
         this.body = body.toString();
@@ -37,7 +38,7 @@ public class SocketRequest {
     
     // Dùng khi body đã là JSON string.
      
-    public SocketRequest(String action, String body) {
+    public SocketRequest(ActionType action, String body) {
         this.requestId = UUID.randomUUID().toString();
         this.action = action;
         this.body = body;
@@ -48,7 +49,7 @@ public class SocketRequest {
         return requestId;
     }
 
-    public String getAction() {
+    public ActionType getAction() {
         return action;
     }
 
@@ -60,7 +61,7 @@ public class SocketRequest {
         this.requestId = requestId;
     }
 
-    public void setAction(String action) {
+    public void setAction(ActionType action) {
         this.action = action;
     }
 
