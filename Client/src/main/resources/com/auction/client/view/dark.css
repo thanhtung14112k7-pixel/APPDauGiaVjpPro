@@ -202,3 +202,78 @@
     /* Đảm bảo khoảng cách từ chữ/ô tìm kiếm xuống đường kẻ không bị dính */
     -fx-padding: 15 20 15 20;
 }
+/* ==========================================
+   AUCTION LIST SCREEN - DARK MODE
+   ========================================== */
+.content-pane {
+    -fx-background-color: #323232; /* Ăn nhập tuyệt đối với nền ScrollPane */
+}
+
+.section-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.status-message-label {
+    -fx-text-fill: #a0a0a0;
+    -fx-font-size: 12px;
+}
+
+/* Kiểu dáng TableView chế độ tối */
+.auction-table {
+    -fx-background-color: #2b2b2b;
+    -fx-background-radius: 8;
+    -fx-border-color: #3d3d3d;
+    -fx-border-radius: 8;
+    -fx-padding: 5;
+}
+
+/* Thanh tiêu đề của bảng */
+.auction-table .column-header-background {
+    -fx-background-color: #242424;
+    -fx-background-radius: 6 6 0 0;
+}
+
+.auction-table .column-header, .auction-table .filler {
+    -fx-background-color: transparent;
+    -fx-size: 40;
+}
+
+.auction-table .column-header .label {
+    -fx-text-fill: #fca311; /* Màu cam thương hiệu làm điểm nhấn tiêu đề cột */
+    -fx-font-weight: bold;
+}
+
+/* Các hàng dữ liệu (Cells) */
+.auction-table .table-row-cell {
+    -fx-background-color: #2b2b2b;
+    -fx-border-color: transparent transparent #3d3d3d transparent; /* Đường gạch ngang mờ */
+}
+
+.auction-table .table-row-cell:filled:hover {
+    -fx-background-color: #383838; /* Sáng nhẹ lên khi di chuột vào dòng */
+}
+
+.auction-table .table-row-cell:filled:selected {
+    -fx-background-color: #fca311; /* Màu nền khi click chọn dòng */
+}
+.auction-table .table-row-cell:filled:selected .label {
+    -fx-text-fill: #000000; /* Chữ chuyển đen để tương phản màu cam */
+}
+
+.auction-table .table-cell {
+    -fx-text-fill: #e0e0e0;
+    -fx-alignment: center-left;
+    -fx-padding: 10;
+}
+
+/* Hệ thống nút bấm phụ trợ */
+.btn-primary { -fx-background-color: #fca311; -fx-text-fill: black; -fx-font-weight: bold; -fx-background-radius: 6; -fx-cursor: hand; }
+.btn-primary:hover { -fx-background-color: #ffb703; }
+
+.btn-secondary { -fx-background-color: #4e4e4e; -fx-text-fill: white; -fx-background-radius: 6; -fx-cursor: hand; }
+.btn-secondary:hover { -fx-background-color: #606060; }
+
+.btn-danger { -fx-background-color: transparent; -fx-border-color: #ff4d4d; -fx-text-fill: #ff4d4d; -fx-background-radius: 6; -fx-cursor: hand; }
+.btn-danger:hover { -fx-background-color: #ff4d4d; -fx-text-fill: white; }

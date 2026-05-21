@@ -28,7 +28,22 @@ import java.util.List;
  * - Server mới là nơi kiểm tra quyền và xử lý nghiệp vụ thật.
  */
 public class ClientAuctionApi {
-    private final Gson gson = new Gson();
+    // Thay thế dòng khởi tạo cũ bằng GsonBuilder để cấu hình chuyển đổi LocalDateTime (Tránh lỗi InaccessibleObjectException trên Java mới)
+    private final Gson gson = new com.google.gson.GsonBuilder()
+            .registerTypeAdapter(java.time.LocalDateTime.class, (com.google.gson.JsonDeserializer<java.time.LocalDateTime>) (json, typeOfT, context) -> {
+                try {
+                    // Thử parse theo định dạng chuẩn ISO (ví dụ: 2026-05-22T05:15:30)
+                    return java.time.LocalDateTime.parse(json.getAsString(), java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                } catch (Exception e) {
+                    // Dự phòng nếu Server trả về định dạng chuỗi custom tùy biến có dấu cách (ví dụ: "yyyy-MM-dd HH:mm:ss")
+                    java.time.format.DateTimeFormatter backupFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                    return java.time.LocalDateTime.parse(json.getAsString(), backupFormatter);
+                }
+            })
+            .registerTypeAdapter(java.time.LocalDateTime.class, (com.google.gson.JsonSerializer<java.time.LocalDateTime>) (src, typeOfSrc, context) ->
+                    new com.google.gson.JsonPrimitive(src.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+            )
+            .create();
 
     /**
      * Gửi request lấy danh sách các phiên đấu giá đang hoạt động.
@@ -184,7 +199,7 @@ public class ClientAuctionApi {
 
             /*
              * SocketRequest là phong bì chung Client gửi lên Server.
-             * actionType.name() tạo action chuẩn theo enum, ví dụ "PLACE_BID".
+             * actionType.name() tạo action chuẩn theo enum, vị dụ "PLACE_BID".
              * body là dữ liệu chi tiết của action đó.
              */
             socketRequest = new SocketRequest(ActionType.valueOf(actionType.name()), body);
@@ -242,7 +257,7 @@ public class ClientAuctionApi {
      * Convert request body thành JsonObject.
      *
      * Nếu requestBody đã là JsonObject thì dùng trực tiếp.
-     * Nếu requestBody là DTO thì convert bằng Gson.
+     * If requestBody là DTO thì convert bằng Gson.
      */
     private JsonObject toJsonObject(Object requestBody) {
         if (requestBody == null) {

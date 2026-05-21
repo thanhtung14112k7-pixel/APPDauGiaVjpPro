@@ -4,6 +4,7 @@ import com.auction.util.ClientSession;
 import com.auction.util.SceneNavigator;
 import javafx.event.ActionEvent; // Import thêm ActionEvent để xử lý nút bấm đổi theme
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -12,9 +13,12 @@ import com.auction.network.ClientAuthApi;
 import com.auction.enums.UserRole;
 import javafx.scene.image.Image;
 import javafx.scene.layout.Pane; // Import thêm Pane để quản lý theme
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.paint.ImagePattern;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Alert;
+import java.io.IOException;
 import java.util.Objects;
 
 public class DashboardController {
@@ -206,6 +210,14 @@ public class DashboardController {
     private void showInfo(String message) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Thông báo");
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private void showError(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Lỗi hệ thống");
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();

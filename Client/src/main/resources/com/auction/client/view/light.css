@@ -198,3 +198,76 @@
 
     -fx-padding: 15 20 15 20;
 }
+/* ==========================================
+   AUCTION LIST SCREEN - LIGHT MODE
+   ========================================== */
+.content-pane {
+    -fx-background-color: #ffffff; /* Nền trắng tinh khôi sạch sẽ */
+}
+
+.section-title {
+    -fx-text-fill: #1a1a1a;
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.status-message-label {
+    -fx-text-fill: #666666;
+    -fx-font-size: 12px;
+}
+
+/* Kiểu dáng TableView chế độ sáng */
+.auction-table {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 8;
+    -fx-border-color: #e0e0e0;
+    -fx-border-radius: 8;
+    -fx-padding: 5;
+}
+
+.auction-table .column-header-background {
+    -fx-background-color: #f4f4f4;
+    -fx-background-radius: 6 6 0 0;
+}
+
+.auction-table .column-header, .auction-table .filler {
+    -fx-background-color: transparent;
+    -fx-size: 40;
+}
+
+.auction-table .column-header .label {
+    -fx-text-fill: #007bff; /* Tiêu đề màu xanh công nghệ */
+    -fx-font-weight: bold;
+}
+
+.auction-table .table-row-cell {
+    -fx-background-color: #ffffff;
+    -fx-border-color: transparent transparent #ededed transparent;
+}
+
+.auction-table .table-row-cell:filled:hover {
+    -fx-background-color: #f9f9f9;
+}
+
+.auction-table .table-row-cell:filled:selected {
+    -fx-background-color: #007bff;
+}
+.auction-table .table-row-cell:filled:selected .label {
+    -fx-text-fill: #ffffff;
+}
+
+.auction-table .table-cell {
+    -fx-text-fill: #333333;
+    -fx-alignment: center-left;
+    -fx-padding: 10;
+}
+
+/* Hệ thống nút bấm phụ trợ chế độ sáng */
+.btn-primary { -fx-background-color: #007bff; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 6; -fx-cursor: hand; }
+.btn-primary:hover { -fx-background-color: #0056b3; }
+
+.btn-secondary { -fx-background-color: #e0e0e0; -fx-text-fill: #333333; -fx-background-radius: 6; -fx-cursor: hand; }
+.btn-secondary:hover { -fx-background-color: #d0d0d0; }
+
+.btn-danger { -fx-background-color: transparent; -fx-border-color: #dc3545; -fx-text-fill: #dc3545; -fx-background-radius: 6; -fx-cursor: hand; }
+.btn-danger:hover { -fx-background-color: #dc3545; -fx-text-fill: white; }
