@@ -1,14 +1,12 @@
-package com.auction.server.event;
+package com.auction.event;
 
 /**
  * ============================================================
  * AuctionEventType - Enum định nghĩa tất cả loại sự kiện
  * ============================================================
- *
  * Mục đích:
  * - Liệt kê các loại sự kiện có thể xảy ra trong hệ thống đấu giá
  * - Dùng làm "type" trong AuctionEvent để các observer biết phải xử lý gì
- *
  * Các loại sự kiện:
  * - NEW_BID: Khi có người đặt giá mới
  * - TIMER_TICK: Hệ thống countdown giây, phút (real-time update)

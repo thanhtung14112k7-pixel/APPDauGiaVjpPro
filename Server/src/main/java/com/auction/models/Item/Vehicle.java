@@ -57,4 +57,13 @@ public class Vehicle extends Item {
     public double getKmAge() {
         return kmage;
     }
+
+    public void setModel(String model) { this.model = model; }
+    public void setKmage(double kmage) { this.kmage = kmage; }
+    public void setLicensePlate(String licensePlate) { this.licensePlate = licensePlate; }
+    public void setEngineType(String engineType) { this.engineType = engineType;
+    }
+
+    public void setKmAge(double kmAge) { this.kmage = kmAge;
+    }
 }

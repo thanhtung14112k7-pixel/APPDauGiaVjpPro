@@ -43,7 +43,7 @@ public enum AuthErrorCode {
         return code;
     }
 
-    public String getMessage() {
+    public String getDefaultMessage() {
         return message;
     }
 }

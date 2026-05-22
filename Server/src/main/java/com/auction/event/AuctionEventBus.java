@@ -1,4 +1,4 @@
-package com.auction.server.event;
+package com.auction.event;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

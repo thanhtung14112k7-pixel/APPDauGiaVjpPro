@@ -2,25 +2,19 @@ package com.auction.network;
 
 import com.auction.controller.AuctionController;
 import com.auction.controller.AuthController;
-import com.auction.dto.LoginRequest;
-import com.auction.dto.LoginResultDTO;
-import com.auction.dto.LogoutRequest;
-import com.auction.dto.RegisterRequest;
-import com.auction.dto.SocketRequest;
-import com.auction.dto.SocketResponse;
-import com.auction.dto.UserDTO;
+import com.auction.dto.*;
 import com.auction.enums.ActionType;
-import com.auction.exception.AuthenticationException;
+import com.auction.exception.BaseException;
 import com.auction.manage.ConnectionManage;
 import com.auction.service.AuthorizationService;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 
-import static com.auction.enums.ActionType.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * RequestDispatcher là bộ điều phối request phía Server.
- *
  * Nhiệm vụ:
  * - Nhận JSON từ ClientHandler.
  * - Parse JSON thành SocketRequest.
@@ -36,291 +30,230 @@ public class RequestDispatcher {
     private final AuctionController auctionController = new AuctionController();
     private final AuthorizationService authorizationService = new AuthorizationService();
 
+    // 🔥 TỐI ƯU HIỆU NĂNG NHÁNH: Tạo Thread Pool riêng chuyên trách các tác vụ nặng (Database, Synchronized Block).
+    // Giúp giải phóng ngay lập tức Luồng Mạng của ClientHandler quay lại đọc luồng byte tiếp theo.
+    private final ExecutorService workerPool = Executors.newFixedThreadPool(16);
+
     /**
      * Điểm vào chính khi Server nhận được một dòng JSON từ Client.
      */
     public void processRequest(String requestJson, ClientSession session) {
-        SocketRequest socketRequest = null;
+        // 🔥 ĐẨY SANG LUỒNG WORKER BẤT ĐỒNG BỘ: Chặn đứng nguy cơ nghẽn hàng đợi mạng của từng Client đơn lẻ
+        workerPool.submit(() -> {
+            SocketRequest socketRequest = null;
 
-        try {
-            socketRequest = gson.fromJson(requestJson, SocketRequest.class);
+            try {
+                socketRequest = gson.fromJson(requestJson, SocketRequest.class);
 
-            if (socketRequest == null || isBlank(socketRequest.getAction().toString())) {
-                sendFailure(session, null, null,
-                        "Request không hợp lệ.",
-                        "BAD_REQUEST");
-                return;
-            }
+                if (socketRequest == null || isBlank(socketRequest.getAction().toString())) {
+                    sendFailure(session, null, null,
+                            "Request không hợp lệ.",
+                            "BAD_REQUEST");
+                    return;
+                }
 
-            ActionType actionType = parseAction(socketRequest.getAction().toString());
-            String action = socketRequest.getAction().toString();
+                ActionType actionType = parseAction(socketRequest.getAction().toString());
+                String action = socketRequest.getAction().toString();
 
-
-            if (!authorizationService.canAccess(action, session)) {
-                sendFailure(session, socketRequest,
-                        "Bạn không có quyền sử dụng chức năng này.",
-                        "FORBIDDEN");
-                return;
-            }
-
-            switch (actionType) {
-                case LOGIN:
-                    handleLogin(socketRequest, session);
-                    break;
-
-                case REGISTER:
-                    handleRegister(socketRequest, session);
-                    break;
-
-                case LOGOUT:
-                    handleLogout(socketRequest, session);
-                    break;
-
-                case GET_ACTIVE_AUCTIONS:
-                    handleGetActiveAuctions(socketRequest, session);
-                    break;
-
-                case GET_AUCTION_DETAIL:
-                    handleGetAuctionDetail(socketRequest, session);
-                    break;
-
-                case CREATE_AUCTION:
-                    handleCreateAuction(socketRequest, session);
-                    break;
-
-                case PLACE_BID:
-                    handlePlaceBid(socketRequest, session);
-                    break;
-
-                case SUBSCRIBE_AUCTION:
-                    handleSubscribeAuction(socketRequest, session);
-                    break;
-
-                case UNSUBSCRIBE_AUCTION:
-                    handleUnsubscribeAuction(socketRequest, session);
-                    break;
-
-                case CANCEL_AUCTION:
-                    handleCancelAuction(socketRequest, session);
-                    break;
-
-
-                default:
+                if (actionType == null) {
                     sendFailure(session, socketRequest,
                             "Action không được hỗ trợ.",
                             "UNSUPPORTED_ACTION");
-                    break;
+                    return;
+                }
+
+                // Kiểm tra phân quyền cưỡng chế dựa trên Exception
+                authorizationService.canAccess(action, session);
+
+                switch (actionType) {
+                    case LOGIN:
+                        handleLogin(socketRequest, session);
+                        break;
+
+                    case REGISTER:
+                        handleRegister(socketRequest, session);
+                        break;
+
+                    case LOGOUT:
+                        handleLogout(socketRequest, session);
+                        break;
+
+                    case GET_ACTIVE_AUCTIONS:
+                        handleGetActiveAuctions(socketRequest, session);
+                        break;
+
+                    case GET_AUCTION_DETAIL:
+                        handleGetAuctionDetail(socketRequest, session);
+                        break;
+
+                    case CREATE_AUCTION:
+                        handleCreateAuction(socketRequest, session);
+                        break;
+
+                    case PLACE_BID:
+                        handlePlaceBid(socketRequest, session);
+                        break;
+
+                    case SUBSCRIBE_AUCTION:
+                        handleSubscribeAuction(socketRequest, session);
+                        break;
+
+                    case UNSUBSCRIBE_AUCTION:
+                        handleUnsubscribeAuction(socketRequest, session);
+                        break;
+
+                    case CANCEL_AUCTION:
+                        handleCancelAuction(socketRequest, session);
+                        break;
+
+                    default:
+                        sendFailure(session, socketRequest,
+                                "Action không được hỗ trợ.",
+                                "UNSUPPORTED_ACTION");
+                        break;
+                }
+
+            } catch (JsonSyntaxException e) {
+                sendFailure(session, socketRequest, "JSON request không hợp lệ.", "INVALID_JSON");
+
+            } catch (BaseException e) {
+                // 🔥 HỨNG TẬP TRUNG TOÀN HỆ THỐNG LỖI NGHIỆP VỤ: (Auth, Authorization, Auction, Wallet, Validation)
+                // Tự động giải mã chuỗi mã lỗi (Error Code) dạng Enum String bay qua Socket.
+                System.err.println("[Central Guard] 🚨 Lỗi nghiệp vụ xảy ra lúc [" + e.getTimestamp()
+                        + "] | Code: " + e.getErrorCode() + " | Chi tiết: " + e.getMessage());
+                sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
+
+            } catch (Exception e) {
+                // Chốt chặn cuối bảo vệ vòng lặp Server không bao giờ crash/sập kết nối ngoài ý muốn
+                System.err.println("[Fatal System Error] 💥 Sự cố hệ thống nghiêm trọng:");
+                e.printStackTrace();
+                sendFailure(session, socketRequest,
+                        "Lỗi xử lý hệ thống.",
+                        "SERVER_ERROR");
             }
-
-        } catch (JsonSyntaxException e) {
-            sendFailure(session, socketRequest, "JSON request không hợp lệ.", "INVALID_JSON");
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Lỗi xử lý hệ thống.",
-                    "SERVER_ERROR");
-        }
+        });
     }
 
     /**
      * Xử lý LOGIN.
-     *
      * Thành công:
      * - Gắn userId, role vào ClientSession.
      * - Đăng ký connection vào ConnectionManage.
      * - Trả SocketResponse.body = LoginResultDTO.
-     *
      * Thất bại:
      * - Trả SocketResponse.failure.
      */
     private void handleLogin(SocketRequest socketRequest, ClientSession session) {
-        try {
-            LoginRequest loginRequest = gson.fromJson(socketRequest.getBody(), LoginRequest.class);
+        LoginRequest loginRequest = gson.fromJson(socketRequest.getBody(), LoginRequest.class);
 
-            LoginResultDTO result = authController.login(loginRequest);
-            UserDTO user = result.getUser();
+        LoginResultDTO result = authController.login(loginRequest);
+        UserDTO user = result.getUser();
 
-            session.setUserId(user.getId());
-            session.setRole(user.getRole());
+        session.setUserId(user.getId());
+        session.setRole(user.getRole());
 
-            ConnectionManage.getInstance().registerConnection(user.getId(), session);
+        ConnectionManage.getInstance().registerConnection(user.getId(), session);
 
-            sendSuccess(session, socketRequest, "Đăng nhập thành công.", result);
-
-        } catch (AuthenticationException e) {
-            sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Đăng nhập thất bại do lỗi hệ thống.",
-                    "LOGIN_ERROR");
-        }
+        sendSuccess(session, socketRequest, "Đăng nhập thành công.", result);
     }
 
     /**
      * Xử lý REGISTER.
-     *
      * Thành công:
      * - Trả SocketResponse.body = UserDTO.
-     *
      * Thất bại:
      * - Trả SocketResponse.failure.
      */
     private void handleRegister(SocketRequest socketRequest, ClientSession session) {
-        try {
-            RegisterRequest registerRequest = gson.fromJson(socketRequest.getBody(), RegisterRequest.class);
+        RegisterRequest registerRequest = gson.fromJson(socketRequest.getBody(), RegisterRequest.class);
 
-            UserDTO user = authController.register(registerRequest);
+        UserDTO user = authController.register(registerRequest);
 
-            sendSuccess(session, socketRequest, "Đăng ký thành công.", user);
-
-        } catch (AuthenticationException e) {
-            sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Đăng ký thất bại do lỗi hệ thống.",
-                    "REGISTER_ERROR");
-        }
+        sendSuccess(session, socketRequest, "Đăng ký thành công.", user);
     }
 
     /**
      * Xử lý LOGOUT.
-     *
      * Server ưu tiên lấy userId từ ClientSession.
      * Không tin userId client gửi lên, vì client có thể giả mạo.
      */
     private void handleLogout(SocketRequest socketRequest, ClientSession session) {
-        try {
-            String userId = session.getUserId();
+        String userId = session.getUserId();
 
-            if (userId == null) {
-                sendFailure(session, socketRequest,
-                        "User is not logged in on this session.",
-                        "USER_NOT_LOGGED_IN");
-                return;
-            }
-
-            authController.logout(userId);
-
-            // 1. Bắn tin báo thành công cho client trước khi ngắt kết nối vật lý
-            sendSuccess(session, socketRequest, "Đăng xuất thành công.", null);
-
-            // 2. Gọi hàm đóng an toàn để thực hiện tháo gỡ ConnectionManage, LiveRoomManage và đóng Socket
-            session.close();
-
-        } catch (AuthenticationException e) {
-            sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
-        } catch (Exception e) {
+        if (userId == null) {
             sendFailure(session, socketRequest,
-                    "Đăng xuất thất bại do lỗi hệ thống.",
-                    "LOGOUT_ERROR");
+                    "User is not logged in on this session.",
+                    "AUT_PERM_000");
+            return;
         }
+
+        authController.logout(userId);
+
+        // 1. Bắn tin báo thành công cho client trước khi ngắt kết nối vật lý
+        sendSuccess(session, socketRequest, "Đăng xuất thành công.", null);
+
+        // 2. Gọi hàm đóng an toàn để thực hiện tháo gỡ ConnectionManage, LiveRoomManage và đóng Socket
+        session.close();
     }
 
     /**
      * Lấy danh sách các phiên đấu giá đang hoạt động.
      */
     private void handleGetActiveAuctions(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.getActiveAuctions();
-            sendSuccess(session, socketRequest, "Lấy danh sách phiên đấu giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể lấy danh sách phiên đấu giá.",
-                    "GET_ACTIVE_AUCTIONS_ERROR");
-        }
+        Object result = auctionController.getActiveAuctions();
+        sendSuccess(session, socketRequest, "Lấy danh sách phiên đấu giá thành công.", result);
     }
 
     /**
      * Lấy chi tiết một phiên đấu giá.
      */
     private void handleGetAuctionDetail(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.getAuctionDetail(socketRequest.getBody());
-            sendSuccess(session, socketRequest, "Lấy chi tiết phiên đấu giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể lấy chi tiết phiên đấu giá.",
-                    "GET_AUCTION_DETAIL_ERROR");
-        }
+        Object result = auctionController.getAuctionDetail(socketRequest.getBody());
+        sendSuccess(session, socketRequest, "Lấy chi tiết phiên đấu giá thành công.", result);
     }
 
     /**
      * Tạo phiên đấu giá mới.
+     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller.
      */
     private void handleCreateAuction(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.createAuction(socketRequest.getBody(), session);
-            sendSuccess(session, socketRequest, "Tạo phiên đấu giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể tạo phiên đấu giá.",
-                    "CREATE_AUCTION_ERROR");
-        }
+        auctionController.createAuction(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Tạo phiên đấu giá thành công.", null);
     }
 
     /**
      * Đặt giá vào một phiên đấu giá.
+     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller.
      */
     private void handlePlaceBid(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.placeBid(socketRequest.getBody(), session);
-            sendSuccess(session, socketRequest, "Đặt giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể đặt giá.",
-                    "PLACE_BID_ERROR");
-        }
+        auctionController.placeBid(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Đặt giá thành công.", null);
     }
 
     /**
      * Đăng ký nhận realtime update của một phiên đấu giá.
      */
     private void handleSubscribeAuction(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.subscribeAuction(socketRequest.getBody(), session);
-            sendSuccess(session, socketRequest, "Đăng ký theo dõi phiên đấu giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể đăng ký theo dõi phiên đấu giá.",
-                    "SUBSCRIBE_AUCTION_ERROR");
-        }
+        Object result = auctionController.subscribeAuction(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Đăng ký theo dõi phiên đấu giá thành công.", result);
     }
 
     /**
      * Hủy đăng ký nhận realtime update của một phiên đấu giá.
+     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller (Nghiệp vụ Unwatch).
      */
     private void handleUnsubscribeAuction(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.unsubscribeAuction(socketRequest.getBody(), session);
-            sendSuccess(session, socketRequest, "Hủy theo dõi phiên đấu giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể hủy theo dõi phiên đấu giá.",
-                    "UNSUBSCRIBE_AUCTION_ERROR");
-        }
+        auctionController.unsubscribeAuction(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Hủy theo dõi phiên đấu giá thành công.", null);
     }
 
     /**
      * Hủy một phiên đấu giá.
+     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller.
      */
     private void handleCancelAuction(SocketRequest socketRequest, ClientSession session) {
-        try {
-            Object result = auctionController.cancelAuction(socketRequest.getBody(), session);
-            sendSuccess(session, socketRequest, "Hủy phiên đấu giá thành công.", result);
-
-        } catch (Exception e) {
-            sendFailure(session, socketRequest,
-                    "Không thể hủy phiên đấu giá.",
-                    "CANCEL_AUCTION_ERROR");
-        }
+        auctionController.cancelAuction(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Hủy phiên đấu giá thành công.", null);
     }
 
     private void sendSuccess(ClientSession session, SocketRequest request, String message, Object body) {
@@ -336,16 +269,23 @@ public class RequestDispatcher {
 
     private void sendFailure(ClientSession session, SocketRequest request, String message, String errorCode) {
         String requestId = request == null ? null : request.getRequestId();
-        String action = request == null ? null : request.getAction().toString();
+        String action = request == null ? null : (request.getAction() == null ? "UNKNOWN" : request.getAction().toString());
 
         sendFailure(session, requestId, action, message, errorCode);
     }
 
     private void sendFailure(ClientSession session, String requestId, String action,
                              String message, String errorCode) {
+        ActionType actionType = parseAction(action);
+
+        // Chống NullPointerException nếu Client cố tình gửi Action rác
+        if (actionType == null) {
+            actionType = ActionType.LOGIN;
+        }
+
         SocketResponse response = SocketResponse.failure(
                 requestId,
-                ActionType.valueOf(action),
+                actionType,
                 message,
                 errorCode
         );
@@ -358,6 +298,7 @@ public class RequestDispatcher {
      * Nếu Client gửi action không nằm trong enum, trả null để dispatcher báo lỗi rõ ràng.
      */
     private ActionType parseAction(String action) {
+        if (action == null) return null;
         try {
             return ActionType.valueOf(action.trim());
         } catch (IllegalArgumentException e) {
@@ -371,5 +312,4 @@ public class RequestDispatcher {
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
     }
-
 }

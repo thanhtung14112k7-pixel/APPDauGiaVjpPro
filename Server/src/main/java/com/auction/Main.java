@@ -2,10 +2,12 @@ package com.auction;
 
 import com.auction.exception.AuthenticationException;
 import com.auction.enums.UserRole;
+import com.auction.manage.LiveRoomManage;
 import com.auction.models.User.AdminFactory;
 import com.auction.models.User.BidderFactory;
 import com.auction.models.User.SellerFactory;
 import com.auction.network.SocketServer;
+import com.auction.event.AuctionEventBus;
 import com.auction.service.AuthService;
 
 import static com.auction.models.User.UserFactory.setRegistry;
@@ -13,12 +15,26 @@ import static com.auction.models.User.UserFactory.setRegistry;
 public class Main {
 
     public static void main(String[] args) {
+
         setRegistry(com.auction.enums.UserRole.BIDDER, new BidderFactory());
         setRegistry(com.auction.enums.UserRole.SELLER, new SellerFactory());
         setRegistry(com.auction.enums.UserRole.ADMIN, new AdminFactory());
 
         System.out.println("=== HỆ THỐNG SERVER ===");
         System.out.println("[Server] Đang khởi động...");
+
+        // ✨ THÊM CODE NÀY ✨
+        // 1. Khởi tạo EventBus
+        AuctionEventBus eventBus = AuctionEventBus.getInstance();
+        System.out.println("[Main] ✅ AuctionEventBus được khởi tạo");
+
+        // 2. Khởi tạo LiveRoomManage
+        LiveRoomManage liveRoomManager = LiveRoomManage.getInstance();
+        System.out.println("[Main] ✅ LiveRoomManage được khởi tạo");
+
+        // 3. QUAN TRỌNG: Đăng ký LiveRoomManage vào EventBus
+        eventBus.attach(liveRoomManager);
+        System.out.println("[Main] ✅ LiveRoomManage đã attach vào EventBus");
 
         seedUsersForTesting();
 

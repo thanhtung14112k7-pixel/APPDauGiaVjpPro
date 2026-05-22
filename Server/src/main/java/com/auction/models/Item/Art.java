@@ -42,4 +42,10 @@ public class Art extends Item {
     // Getters & Setters cho các field riêng (nếu cần)
     public String getPainter() { return painter; }
     public String getArtStyle() { return artStyle; }
+
+    public void setPainter(String painter) { this.painter = painter;
+    }
+
+    public void setArtStyle(String artStyle) { this.artStyle = artStyle;
+    }
 }

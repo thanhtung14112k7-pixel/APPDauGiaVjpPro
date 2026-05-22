@@ -41,4 +41,8 @@ public class Electronics extends Item {
 
     public String getBrand() { return brand; }
     public int getWarrantyMonths() { return warrantyMonths; }
+
+    public void setBrand(String brand) { this.brand = brand; }
+    public void setWarrantyMonths(int warrantyMonths) { this.warrantyMonths = warrantyMonths;
+    }
 }

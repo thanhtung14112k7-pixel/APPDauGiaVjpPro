@@ -6,28 +6,21 @@ import com.auction.models.User.User;
 import com.auction.enums.UserRole;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class UserManage {
     private static volatile UserManage instance;
 
-    // Sử dụng ConcurrentHashMap để thread-safe
-    private final Map<String, User> users; // id -> user
-    private final Map<String, String> usernameToIdMap; // username -> userId
-    private final Map<String, String> emailToIdMap;    // email -> userId
+    // 🔥 SỬA ĐỒNG BỘ: Khởi tạo đúng ConcurrentHashMap để an toàn đa luồng tối đa cho mọi luồng đọc/ghi
+    private final Map<String, User> users = new ConcurrentHashMap<>();
+    private final Map<String, String> usernameToIdMap = new ConcurrentHashMap<>();
+    private final Map<String, String> emailToIdMap = new ConcurrentHashMap<>();
 
-    private UserManage() {
-        this.users = new HashMap<>();
-        this.usernameToIdMap = new HashMap<>();
-        this.emailToIdMap = new HashMap<>();
-    }
+    private UserManage() {}
 
-    /**
-     * Lấy instance duy nhất của UserManage (Double-Checked Locking)
-     */
     public static UserManage getInstance() {
         UserManage temp = instance;
         if (temp == null) {
@@ -42,101 +35,111 @@ public class UserManage {
     }
 
     /**
-     * Thêm người dùng mới vào hệ thống
-     * * @param user Người dùng cần thêm
-     * * @return true nếu thêm thành công, false nếu username/email đã tồn tại
+     * Thêm người dùng mới vào hệ thống (Khi Đăng nhập hoặc Đăng ký thành công)
      */
-    public synchronized boolean addUser(User user) throws AuthenticationException {
+    public boolean addUser(User user) throws AuthenticationException {
+        if (user == null) return false;
 
-        this.isUsernameExists(user.getUsername()); // Kiểm tra username đã tồn tại, nếu có sẽ ném AuthenticationException
-        this.isEmailExists(user.getEmail());       // Kiểm tra email đã tồn tại, nếu có sẽ ném AuthenticationException
+        // Kiểm tra trùng lặp thông tin an toàn qua các map phụ
+        this.isUsernameExists(user.getUsername());
+        this.isEmailExists(user.getEmail());
 
         String id = user.getId();
+
+        // Cất vào kho RAM đồng bộ
         users.put(id, user);
         usernameToIdMap.put(user.getUsername(), id);
         emailToIdMap.put(user.getEmail(), id);
 
-        System.out.println("Thêm người dùng thành công");
-        return true;
-    }
-
-    /** Cần sửa lại,
-     * Cập nhật thông tin người dùng     * @param userId ID của người dùng cần cập nhật     * @param updatedUser Người dùng mới với thông tin cập nhật     * @return true nếu cập nhật thành công, false nếu người dùng không tồn tại
-     */
-    public synchronized boolean updateUser(String userId, User updatedUser) throws AuthenticationException {
-
-        this.isUserIdInvalid(userId); // Kiểm tra ID hợp lệ, nếu không sẽ ném AuthenticationException
-
-        User oldUser = users.get(userId);
-        String oldUsername = oldUser.getUsername();
-        String oldEmail = oldUser.getEmail();
-        String newUsername = updatedUser.getUsername();
-        String newEmail = updatedUser.getEmail();
-
-        // Kiểm tra username mới không trùng với user khác (nếu thay đổi)
-        if (!newUsername.equals(oldUsername)){
-            this.isUsernameExists(newUsername);
-        }
-
-        // Kiểm tra email mới không trùng với user khác (nếu thay đổi)
-        if (!newEmail.equals(oldEmail)){
-            this.isEmailExists(newEmail);
-        }
-
-        // Cập nhật maps
-        usernameToIdMap.remove(oldUsername);
-        emailToIdMap.remove(oldEmail);
-        usernameToIdMap.put(newUsername, userId);
-        emailToIdMap.put(newEmail, userId);
-
-        updatedUser.setId(userId); // Giữ nguyên ID
-        users.put(userId, updatedUser);
-
-        System.out.println("Cập nhật người dùng thành công: " + newUsername);
+        System.out.println("[UserManage] ✅ Nạp người dùng lên RAM thành công: " + user.getUsername());
         return true;
     }
 
     /**
-     * Xóa người dùng khỏi hệ thống     * @param userId ID của người dùng cần xóa     * @return true nếu xóa thành công, false nếu người dùng không tồn tại
+     * Cập nhật thông tin người dùng
+     * 🔥 SỬA LỖI CHÍ MẠNG: Khóa cục bộ theo ID, cập nhật gián tiếp qua Setter để bảo vệ tính toàn vẹn Maps và vùng nhớ tham chiếu
      */
-    public synchronized boolean deleteUser(String userId) throws AuthenticationException {
+    public boolean updateUser(String userId, User updatedUser) throws AuthenticationException {
+        if (userId == null || updatedUser == null) return false;
 
-        //check có tồn tại id này ko
-        this.isUserIdInvalid(userId); // Kiểm tra ID hợp lệ, nếu không sẽ ném AuthenticationException
+        this.isUserIdInvalid(userId);
 
-        User user = users.get(userId);
-        String username = user.getUsername();
-        String email = user.getEmail();
+        // 🔥 TỐI ƯU ĐA LUỒNG: Khóa intern ID để tránh nghẽn luồng toàn hệ thống, ai sửa người nấy xếp hàng
+        synchronized (userId.intern()) {
+            User oldUser = users.get(userId);
 
-        users.remove(userId);
-        usernameToIdMap.remove(username);
-        emailToIdMap.remove(email);
+            String oldUsername = oldUser.getUsername();
+            String oldEmail = oldUser.getEmail();
+            String newUsername = updatedUser.getUsername();
+            String newEmail = updatedUser.getEmail();
 
-        System.out.println("Xóa người dùng thành công: " + username);
-        return true;
+            // Validate trùng lặp nếu có sự thay đổi thông tin định danh
+            if (!newUsername.equals(oldUsername)) {
+                this.isUsernameExists(newUsername);
+            }
+            if (!newEmail.equals(oldEmail)) {
+                this.isEmailExists(newEmail);
+            }
+
+            // 🔥 BẢO VỆ AN TOÀN MAPS: Chỉ cập nhật các map ánh xạ khi toàn bộ quá trình validate đã lọt qua an toàn
+            if (!newUsername.equals(oldUsername)) {
+                usernameToIdMap.remove(oldUsername);
+                usernameToIdMap.put(newUsername, userId);
+            }
+            if (!newEmail.equals(oldEmail)) {
+                emailToIdMap.remove(oldEmail);
+                emailToIdMap.put(newEmail, userId);
+            }
+
+            // 🔥 SỬA LỖI THAM CHIẾU: Không dùng lệnh users.put(userId, updatedUser) tạo Object mới gây lệch RAM.
+            // Ta cập nhật trực tiếp thông tin lên chính Object 'oldUser' đang sống.
+            oldUser.setUsername(newUsername);
+            oldUser.setEmail(newEmail);
+            oldUser.setPassword(updatedUser.getPassword()); // Cập nhật mật khẩu nếu có
+            // Nếu có các trường ví tiền, thông tin cá nhân khác, gọi Setter ở đây...
+
+            System.out.println("[UserManage] 🔄 Cập nhật thông tin người dùng thành công: " + newUsername);
+            return true;
+        }
     }
 
-
-
     /**
-     * Lấy người dùng theo ID     * @param userId ID của người dùng     * @return User nếu tìm thấy, null nếu không tồn tại
+     * Xóa người dùng khỏi hệ thống RAM (Gọi khi USER LOGOUT hoặc Socket Disconnect hoàn toàn)
      */
+    public boolean deleteUser(String userId) throws AuthenticationException {
+        if (userId == null) return false;
+
+        this.isUserIdInvalid(userId);
+
+        synchronized (userId.intern()) {
+            User user = users.get(userId);
+            String username = user.getUsername();
+            String email = user.getEmail();
+
+            // Trục xuất sạch sẽ khỏi cả 3 map để giải phóng bộ nhớ RAM triệt để
+            users.remove(userId);
+            usernameToIdMap.remove(username);
+            emailToIdMap.remove(email);
+
+            System.out.println("[UserManage] 🧹 Trục xuất người dùng khỏi RAM thành công: " + username);
+            return true;
+        }
+    }
+
+    // --- Các hàm đọc không sửa đổi: Tận dụng cơ chế đọc siêu tốc, không block luồng của ConcurrentHashMap ---
+
     public User getUser(String userId) {
-        return users.get(userId);
+        return userId != null ? users.get(userId) : null;
     }
 
-    /**
-     * Lấy người dùng theo username     * @param username Username của người dùng     * @return User nếu tìm thấy, null nếu không tồn tại
-     */
     public User getUserByUsername(String username) {
+        if (username == null) return null;
         String userId = usernameToIdMap.get(username);
         return userId != null ? users.get(userId) : null;
     }
 
-    /**
-     * Lấy người dùng theo email     * @param email Email của người dùng     * @return User nếu tìm thấy, null nếu không tồn tại
-     */
     public User getUserByEmail(String email) {
+        if (email == null) return null;
         String userId = emailToIdMap.get(email);
         return userId != null ? users.get(userId) : null;
     }
@@ -145,44 +148,33 @@ public class UserManage {
         return id != null ? users.get(id) : null;
     }
 
-    /**
-     * Lấy tất cả người dùng     * @return Danh sách tất cả người dùng
-     */
     public List<User> getAllUsers() {
         return new ArrayList<>(users.values());
     }
 
-    /**
-     * Lấy người dùng theo vai trò     * @param role Vai trò cần lọc     * @return Danh sách người dùng có vai trò đó
-     */
     public List<User> getUsersByRole(UserRole role) {
+        if (role == null) return new ArrayList<>();
         return users.values().stream()
-                .filter(user -> user.getRole().equals(role.toString()))
+                .filter(user -> role.name().equals(user.getRole())) // Đồng bộ so sánh theo tên enum
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Lấy số lượng người dùng hiện có     * @return Số lượng người dùng
-     */
     public int getUserCount() {
         return users.size();
     }
 
-    //Kiểm tra id truyền vào hợp lệ ko
     private void isUserIdInvalid(String userId) throws AuthenticationException {
-        if(userId == null || userId.isEmpty() || !users.containsKey(userId))
+        if (userId == null || userId.isEmpty() || !users.containsKey(userId))
             throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
     }
 
-    //Kiểm tra username tồn tại chưa
     public void isUsernameExists(String username) throws AuthenticationException {
-        if (usernameToIdMap.containsKey(username))
+        if (username != null && usernameToIdMap.containsKey(username))
             throw new AuthenticationException(AuthErrorCode.USERNAME_ALREADY_EXISTS);
     }
 
-    //Kiểm tra email tồn tại chưa
     public void isEmailExists(String email) throws AuthenticationException {
-        if (emailToIdMap.containsKey(email))
+        if (email != null && emailToIdMap.containsKey(email))
             throw new AuthenticationException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
     }
 }

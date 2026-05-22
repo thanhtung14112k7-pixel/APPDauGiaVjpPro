@@ -14,8 +14,10 @@ package com.auction.network;
  */
 
 import com.auction.enums.UserRole;
+import com.auction.exception.AuthenticationException;
 import com.auction.manage.ConnectionManage;
 import com.auction.manage.LiveRoomManage;
+import com.auction.manage.UserManage;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -64,11 +66,17 @@ public class ClientSession {
      * 🔥 HÀM ĐÓNG KẾT NỐI AN TOÀN KHI CÓ SỰ CỐ ĐỨT MẠNG
      * Tự động dọn dẹp sạch sẽ dấu vết của Client trên RAM Server
      */
-    public void close() {
+    public void close() throws AuthenticationException {
         // 1. Dọn dẹp trên các Manager hệ thống trước khi hủy Socket
         if (userId != null) {
             // Xóa thiết bị này khỏi danh sách quản lý kết nối online
             ConnectionManage.getInstance().removeConnection(userId, this);
+
+            // 🔥 THÊM MỚI ĐỒNG BỘ: Nếu thiết bị này tắt đi và user không còn máy nào online khác
+            if (!ConnectionManage.getInstance().isUserOnline(userId)) {
+                // Trục xuất luôn thông tin User khỏi RAM UserManage để chống tràn bộ nhớ
+                UserManage.getInstance().deleteUser(userId);
+            }
 
             // Nếu đang xem một phòng đấu giá trực tuyến, ép out khỏi phòng real-time đó luôn
             if (currentAuctionId != null) {

@@ -8,15 +8,26 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 public class DatabaseConnection {
-    private static final HikariDataSource dataSource;
+    // Để volatile để bảo đảm tính hiển thị hiển nhiên trong môi trường đa luồng
+    private static volatile HikariDataSource dataSource;
+
     private static final String DEFAULT_JDBC_URL = "jdbc:mysql://localhost:3306/vnu_auction_system";
     private static final String DEFAULT_USERNAME = "root";
     private static final String DEFAULT_PASSWORD = "Son22092007@";
     private static final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
 
-    static {
+    private DatabaseConnection() {} // Anti-instantiation
+
+    /**
+     * 🔥 TỐI ƯU CHUYÊN NGHIỆP: Thay thế khối static bằng hàm khởi tạo tường minh.
+     * Hàm này sẽ được nhạc trưởng hàm main() chủ động kích hoạt khi bắt đầu bật Server.
+     */
+    public static synchronized void initialize() {
+        if (dataSource != null) {
+            return; // Đảm bảo tính Idempotent - không khởi tạo trùng lặp pool
+        }
+
         try {
-            // Chuyển config thành biến cục bộ trong khối static
             HikariConfig config = new HikariConfig();
 
             // 1. Lấy thông tin credentials và URL từ env hoặc default
@@ -28,46 +39,59 @@ public class DatabaseConnection {
             config.setUsername(username);
             config.setPassword(password);
 
-            // 2. Cấu hình tối ưu cho Connection Pool
+            // 2. Cấu hình tối ưu hiệu năng cao cho Connection Pool (MySQL Specific)
             config.addDataSourceProperty("cachePrepStmts", "true");
             config.addDataSourceProperty("prepStmtCacheSize", "250");
             config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-
-            // Cấu hình SSL nghiêm ngặt cho Azure MySQL
-            config.addDataSourceProperty("useSSL", "true");
-            config.addDataSourceProperty("sslMode", "REQUIRED");
-            config.addDataSourceProperty("allowPublicKeyRetrieval", "true");
             config.addDataSourceProperty("serverTimezone", "UTC");
 
-            // Cấu hình kích thước Pool
+            // 🔥 TỐI ƯU THÔNG MINH: Chỉ ép bật SSL REQUIRED nếu chuỗi kết nối hướng lên Cloud Azure.
+            // Nếu chạy dưới localhost, hệ thống tự động tắt đi để tránh lỗi từ chối kết nối vật lý.
+            if (jdbcUrl.contains("azure") || "true".equalsIgnoreCase(dotenv.get("DB_USE_SSL"))) {
+                config.addDataSourceProperty("useSSL", "true");
+                config.addDataSourceProperty("sslMode", "REQUIRED");
+                config.addDataSourceProperty("allowPublicKeyRetrieval", "true");
+                System.out.println("[DatabaseConnection] 🔒 Kích hoạt chế độ bảo mật SSL nghiêm ngặt cho Cloud.");
+            } else {
+                config.addDataSourceProperty("useSSL", "false");
+                config.addDataSourceProperty("allowPublicKeyRetrieval", "true");
+                System.out.println("[DatabaseConnection] 🔓 Kết nối cơ sở dữ liệu ở chế độ Local (Tắt mã hóa SSL).");
+            }
+
+            // Cấu hình kích thước Pool an toàn cho hệ thống Socket
             config.setMaximumPoolSize(10);
             config.setMinimumIdle(5);
             config.setConnectionTimeout(30000); // 30 seconds
             config.setIdleTimeout(600000); // 10 minutes
             config.setMaxLifetime(1800000); // 30 minutes
 
-            // 3. Khởi tạo DataSource duy nhất
+            // 3. Khai hỏa thiết lập DataSource duy nhất
             dataSource = new HikariDataSource(config);
 
         } catch (Exception e) {
-            System.err.println("[DatabaseConnection] ❌ Lỗi khởi tạo database connection pool:");
-            System.err.println("[DatabaseConnection] " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Không thể khởi tạo database connection pool", e);
+            // Không nuốt lỗi câm lặng, ném Exception rõ ràng để hàm main dừng khởi động Server
+            throw new RuntimeException("Trọng pháo khởi tạo Database Connection Pool bị gãy!", e);
         }
     }
 
-    private DatabaseConnection() {} // Anti-instantiation
-
+    /**
+     * Lấy kết nối vật lý an toàn từ Pool phục vụ cho tầng DAO
+     */
     public static Connection getConnection() throws SQLException {
+        if (dataSource == null) {
+            // Phòng hờ nếu lập trình viên quên gọi initialize() ở hàm main
+            initialize();
+        }
         return dataSource.getConnection();
     }
 
-    // Thêm hàm đóng pool an toàn khi ứng dụng tắt (Shutdown Hook)
+    /**
+     * Đóng pool an toàn phục vụ tiến trình Graceful Shutdown khi tắt Server
+     */
     public static void closePool() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            System.out.println("[DatabaseConnection] ℹ️ Database connection pool đã đóng.");
+            System.out.println("[DatabaseConnection] ℹ️ Database connection pool đã đóng an toàn.");
         }
     }
 
@@ -88,7 +112,6 @@ public class DatabaseConnection {
         String name = firstNonBlank(dotenv.get("AUCTION_DB_NAME"), dotenv.get("DB_NAME"));
 
         if (host == null || name == null) {
-            System.out.println("[DatabaseConnection] ℹ️ Không tìm thấy cấu hình env, sử dụng default local URL");
             return DEFAULT_JDBC_URL;
         }
 
@@ -115,13 +138,11 @@ public class DatabaseConnection {
 
     private static String firstNonBlank(String... values) {
         if (values == null) return null;
-
         for (String value : values) {
             if (value != null && !value.trim().isEmpty()) {
                 return value;
             }
         }
-
         return null;
     }
 }

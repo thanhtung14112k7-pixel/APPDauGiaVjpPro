@@ -1,18 +1,26 @@
 package com.auction.manage;
 
 import com.auction.models.Item.Item;
-
+import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ProductManage {
     private static volatile ProductManage instance;
-    private final Map<String, Item> items;
-    private ProductManage(){
-        this.items = new HashMap<>();
-    }
+
+    // 1. CHUYỂN ĐỔI: Sử dụng ConcurrentHashMap để an toàn đa luồng tối đa, không khóa chết cả class
+    private final Map<String, Item> items = new ConcurrentHashMap<>();
+
+    // 🔥 THÊM MỚI: Bộ quản lý thời gian tương tác để phục vụ trục xuất sản phẩm rác khỏi RAM
+    private final Map<String, LocalDateTime> lastAccessedTime = new ConcurrentHashMap<>();
+
+    // Cấu hình: Sau 15 phút không ai xem hoặc tương tác, sản phẩm tự động bị xóa khỏi RAM
+    private static final long MAX_IDLE_MINUTES = 15;
+
+    private ProductManage(){}
 
     public static ProductManage getInstance(){
         ProductManage temp = instance;
@@ -20,82 +28,98 @@ public class ProductManage {
             synchronized (ProductManage.class){
                 temp = instance;
                 if(temp == null){
-                    temp = instance  = new ProductManage();
+                    temp = instance = new ProductManage();
                 }
             }
         }
         return temp;
     }
 
-    //additem
-    public synchronized boolean addProduct(Item item) {
+    // Gỡ bỏ synchronized hàm vì ConcurrentHashMap đã lo giải pháp thread-safe nội bộ
+    public void addProduct(Item item) {
         if (item == null) {
             System.out.println("Lỗi: Sản phẩm không được null");
-            return false;
+            return;
         }
 
-        if (items.containsKey(item.getId())) {
+        // Chống race condition ghi đè bằng hàm nguyên thủy của ConcurrentHashMap
+        Item existing = items.putIfAbsent(item.getId(), item);
+        if (existing != null) {
             System.out.println("Lỗi: Sản phẩm với ID '" + item.getId() + "' đã tồn tại");
-            return false;
+            return;
         }
 
-        items.put(item.getId(), item);
-        System.out.println("Thêm sản phẩm thành công: " + item.getId());
-        return true;
+        lastAccessedTime.put(item.getId(), LocalDateTime.now());
+        System.out.println("Thêm sản phẩm thành công vào RAM: " + item.getId());
     }
 
-    //Lấy item theo ID
     public Item getProduct(String productId) {
         if (productId == null || productId.isEmpty()) {
-            System.out.println("Lỗi: ID sản phẩm không hợp lệ");
             return null;
         }
-        return items.get(productId);
+
+        Item item = items.get(productId);
+        if (item != null) {
+            // 🔥 THÊM MỚI: Đánh dấu user vừa truy cập, gia hạn thời gian sống trên RAM cho sản phẩm
+            lastAccessedTime.put(productId, LocalDateTime.now());
+        }
+        return item;
     }
 
-    //Sửa thông tin items
-    public synchronized boolean updateProduct(String productId, Item updatedItem) {
-        if (productId == null || updatedItem == null) {
-            System.out.println("Lỗi: ID sản phẩm hoặc sản phẩm mới không được null");
-            return false;
-        }
+    public boolean updateProduct(String productId, Item updatedItem) {
+        if (productId == null || updatedItem == null) return false;
 
         if (!items.containsKey(productId)) {
-            System.out.println("Lỗi: Sản phẩm với ID '" + productId + "' không tồn tại");
+            System.out.println("Lỗi: Sản phẩm với ID '" + productId + "' không tồn tại trên RAM");
             return false;
         }
 
-        updatedItem.setId(productId); // Giữ nguyên ID
+        updatedItem.setId(productId);
         items.put(productId, updatedItem);
-        System.out.println("Cập nhật sản phẩm thành công: " + productId);
+        lastAccessedTime.put(productId, LocalDateTime.now()); // Gia hạn thời gian sống
         return true;
     }
 
-    //Xoá item theo ID
-    public synchronized boolean deleteProduct(String productId) {
-        if (productId == null || productId.isEmpty()) {
-            System.out.println("Lỗi: ID sản phẩm không hợp lệ");
-            return false;
-        }
+    public boolean deleteProduct(String productId) {
+        if (productId == null || productId.isEmpty()) return false;
 
-        if (!items.containsKey(productId)) {
-            System.out.println("Lỗi: Sản phẩm với ID '" + productId + "' không tồn tại");
-            return false;
+        Item removed = items.remove(productId);
+        if (removed != null) {
+            lastAccessedTime.remove(productId); // Xóa vết thời gian
+            System.out.println("Xóa sản phẩm thành công khỏi RAM: " + productId);
+            return true;
         }
-
-        items.remove(productId);
-        System.out.println("Xóa sản phẩm thành công: " + productId);
-        return true;
+        return false;
     }
 
-    //Lấy tất cả item
     public List<Item> getAllProducts() {
+        // Trả về bản sao an toàn tại thời điểm gọi, không lo ConcurrentModificationException
         return new ArrayList<>(items.values());
     }
 
-    //Kiểm tra items có tồn tại ko
     public boolean isProductExists(String productId) {
         return productId != null && items.containsKey(productId);
     }
 
+    /**
+     * 🔥 HÀM THÊM MỚI CHÍ MẠNG: Dọn dẹp bộ nhớ đệm sản phẩm định kỳ.
+     * Hàm này không cần chạy luồng scheduler riêng, bạn có thể gọi ké nó vào bên trong
+     * hàm startLifecycleMonitor() của AuctionManage để tiết kiệm tài nguyên Server!
+     */
+    public void cleanupIdleProducts() {
+        LocalDateTime now = LocalDateTime.now();
+        for (String productId : items.keySet()) {
+            LocalDateTime lastAccess = lastAccessedTime.get(productId);
+            if (lastAccess != null) {
+                long idleMinutes = Duration.between(lastAccess, now).toMinutes();
+
+                // Nếu sản phẩm nằm im lìm trên RAM quá 15 phút không ai ngó ngàng
+                if (idleMinutes >= MAX_IDLE_MINUTES) {
+                    System.out.println("[Cache Item] 🧹 Trục xuất sản phẩm idle khỏi RAM để giải phóng bộ nhớ: " + productId);
+                    items.remove(productId);
+                    lastAccessedTime.remove(productId);
+                }
+            }
+        }
+    }
 }

@@ -2,9 +2,9 @@ package com.auction.manage;
 
 import com.auction.enums.AuctionStatus;
 import com.auction.models.Auction.Auction;
-import com.auction.server.event.AuctionEvent;
-import com.auction.server.event.AuctionEventBus;
-import com.auction.server.event.AuctionEventType;
+import com.auction.event.AuctionEvent;
+import com.auction.event.AuctionEventBus;
+import com.auction.event.AuctionEventType;
 import com.auction.service.AuctionService;
 import org.jetbrains.annotations.NotNull;
 
@@ -22,6 +22,10 @@ import static com.auction.enums.AuctionStatus .*;
 
 public class AuctionManage {
     public static volatile AuctionManage instance;
+    // 🔥 THÊM MỚI: Quản lý thời gian tương tác cuối cùng của các phiên trên RAM (Để dọn dẹp phiên rác)
+    private final Map<String, LocalDateTime> lastAccessedTime = new ConcurrentHashMap<>();
+    // Cấu hình thời gian tối đa một phiên được phép "nằm im" trên RAM nếu không phải trạng thái RUNNING
+    private static final long MAX_IDLE_MINUTES = 10;
     private final Map<String, Auction> activeAuctions = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private AuctionService auctionService;
@@ -50,14 +54,22 @@ public class AuctionManage {
 
     public void addAuction(Auction auction){
         activeAuctions.put(auction.getId(),auction);
+        // 🔥 THÊM MỚI: Đánh dấu thời gian nạp vào RAM ban đầu
+        lastAccessedTime.put(auction.getId(), LocalDateTime.now());
     }
 
     public void removeAuctionById(String id){
         activeAuctions.remove(id);
+        lastAccessedTime.remove(id); // 🔥 Tháo dỡ vết cache
     }
 
     public Auction getAuctionById(String id){
-        return activeAuctions.get(id);
+        Auction auction = activeAuctions.get(id);
+        if (auction != null) {
+            // 🔥 THÊM MỚI: Mỗi khi có người truy cập (xem chi tiết, đặt giá), cập nhật mốc thời gian "sống"
+            lastAccessedTime.put(id, LocalDateTime.now());
+        }
+        return auction;
     }
 
     public List<Auction> getAllActive(){
@@ -79,22 +91,25 @@ public class AuctionManage {
 
                 // Xóa khỏi danh sách "đang hoạt động" để giải phóng bộ nhớ RAM
                 activeAuctions.remove(auctionId);
+                lastAccessedTime.remove(auctionId);
             }
         }
     }
 
 
     //Quản lý vòng đời của auction tự động bằng realtime
-    // Quản lý vòng đời của auction tự động bằng realtime
     public void startLifecycleMonitor() {
         scheduler.scheduleAtFixedRate(() -> {
             LocalDateTime now = LocalDateTime.now();
 
+            // Luồng dọn dẹp sản phẩm rác ké luồng đếm giờ hệ thống
+            ProductManage.getInstance().cleanupIdleProducts();
+
             for (Auction auction : activeAuctions.values()) {
-                // 1. Lưu lại trạng thái cũ
+                //  Lưu lại trạng thái cũ
                 AuctionStatus oldStatus = auction.getStatus();
 
-                // 2. Refresh trạng thái theo thời gian thực
+                //  Refresh trạng thái theo thời gian thực
                 auction.refreshStatus(now);
                 AuctionStatus newStatus = auction.getStatus();
                 String auctionId = auction.getId();
@@ -110,36 +125,57 @@ public class AuctionManage {
                             secondsLeft
                     );
                     AuctionEventBus.getInstance().publish(timerEvent);
+                    // Vì phòng đang RUNNING và bắn tick liên tục, ta luôn cập nhật để giữ nó trên RAM
+                    lastAccessedTime.put(auctionId, now);
                 }
 
                 // 2. Thông báo khi VỪA MỚI chuyển trạng thái từ OPEN sang RUNNING
                 if (oldStatus == OPEN && newStatus == RUNNING) {
                     // 🔥 THAY ĐỔI TẠI ĐÂY: Đồng bộ các Khóa dữ liệu khi phiên chính thức khai hỏa
-                    AuctionEvent startEvent = getAuctionEvent(auction, auctionId);
+                    AuctionEvent startEvent = getAuctionEvent(auctionId);
                     AuctionEventBus.getInstance().publish(startEvent);
                 }
 
-                // 4. Nếu VỪA MỚI kết thúc thì gọi hàm xử lý
+                // 3. Nếu VỪA MỚI kết thúc thì gọi hàm xử lý
                 if (oldStatus == RUNNING && newStatus == FINISHED) {
                     finishAuction(auction.getId());
+                    continue;
+                }
+
+                // 🔥 LUỒNG 4 (THÊM MỚI): KIỂM TRA ĐỂ TRỤC XUẤT CÁC PHIÊN KHÔNG HOẠT ĐỘNG (CACHE EVICTION)
+                // Điều kiện trục xuất: Phiên KHÔNG PHẢI đang chạy (có thể là OPEN hoặc đã đóng)
+                // VÀ không có ai tương tác (đặt giá, xem chi tiết) quá MAX_IDLE_MINUTES
+                if (newStatus != RUNNING) {
+                    // Tính toán xem còn bao nhiêu phút nữa thì phiên này bắt đầu chạy (startTime)
+                    long minutesUntilStart = Duration.between(now, auction.getStartTime()).toMinutes();
+
+                    // LUẬT BẢO VỆ: Nếu còn dưới 15 phút nữa là mở cửa, KHÔNG ĐƯỢC trục xuất khỏi RAM
+                    if (minutesUntilStart > 15) {
+                        LocalDateTime lastAccess = lastAccessedTime.get(auctionId);
+                        if (lastAccess != null) {
+                            long idleMinutes = Duration.between(lastAccess, now).toMinutes();
+                            if (idleMinutes >= MAX_IDLE_MINUTES) {
+                                // Đủ điều kiện nằm im và còn lâu mới chạy -> Tiến hành dọn dẹp giải phóng RAM
+                                activeAuctions.remove(auctionId);
+                                lastAccessedTime.remove(auctionId);
+                            }
+                        }
+                    }
                 }
             }
         }, 0, 1, TimeUnit.SECONDS); // Quét mỗi giây 1 lần
     }
 
     @NotNull
-    private static AuctionEvent getAuctionEvent(Auction auction, String auctionId) {
+    private static AuctionEvent getAuctionEvent(String auctionId) {
         Map<String, Object> statusPayload = new HashMap<>();
         statusPayload.put("newStatus", AuctionStatus.RUNNING.name());
-        statusPayload.put("highestId", auction.getHighestBidderId()); // Thường là null tại vạch xuất phát
-        statusPayload.put("highestPrice", auction.getCurrentPrice());  // Giá khởi điểm ban đầu
         statusPayload.put("message", "Phiên đấu giá ĐÃ BẮT ĐẦU! Hãy nhanh tay đặt giá!");
 
-        AuctionEvent startEvent = new AuctionEvent(
+        return new AuctionEvent(
                 auctionId,
                 AuctionEventType.STATUS_CHANGED,
                 statusPayload
         );
-        return startEvent;
     }
 }

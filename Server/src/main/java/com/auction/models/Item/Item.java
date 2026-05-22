@@ -94,4 +94,19 @@ public abstract class Item extends Entity implements Serializable {
     public Object getCreatedAt() {
         return createdAt;
     }
+
+    public void setName(String name) { this.name = name;
+    }
+
+    public void setDescription(String description) { this.description = description;
+    }
+
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl;
+    }
+
+    public void setStartingPrice(double startingPrice) { this.startingPrice = startingPrice;
+    }
+
+    public void setYearCreated(int yearCreated) { this.yearCreated = yearCreated;
+    }
 }
