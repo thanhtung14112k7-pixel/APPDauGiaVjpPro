@@ -8,18 +8,23 @@ import com.auction.dto.BidTransactionDTO;
 import com.auction.enums.AuctionStatus;
 import com.auction.enums.BidStatus;
 import com.auction.enums.ItemStatus;
+import com.auction.exception.AuctionErrorCode;
+import com.auction.exception.AuctionException;
+import com.auction.exception.WalletErrorCode;
+import com.auction.exception.WalletException;
 import com.auction.manage.AuctionManage;
 import com.auction.manage.ConnectionManage;
 import com.auction.manage.LiveRoomManage;
 import com.auction.manage.ProductManage;
 import com.auction.models.Auction.Auction;
+import com.auction.models.User.User;
 import com.auction.network.ClientSession;
 import com.auction.models.Auction.BidTransaction;
 import com.auction.models.Item.Item;
 import com.auction.models.User.Bidder;
-import com.auction.server.event.AuctionEvent;
-import com.auction.server.event.AuctionEventBus;
-import com.auction.server.event.AuctionEventType;
+import com.auction.event.AuctionEvent;
+import com.auction.event.AuctionEventBus;
+import com.auction.event.AuctionEventType;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -38,7 +43,7 @@ public class AuctionService {
 
 
 
-    public boolean createAuction(String itemId, String sellerId, double startPrice,
+    public void createAuction(String itemId, String sellerId,
                                  double stepPrice, LocalDateTime startTime, LocalDateTime endTime) {
 
         // Lấy đối tượng Live trên RAM để kiểm tra trạng thái tức thì
@@ -46,139 +51,146 @@ public class AuctionService {
         if (liveItem == null) {
             // Nếu RAM chưa load, cố gắng tìm dưới DB
             liveItem = itemDAO.findById(itemId).orElse(null);
-            if (liveItem == null) return false;
+            if (liveItem == null) {
+                throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND);
+            }
+            // 🔥 NẠP LẠI VÀO RAM: Cất vào kho bộ đệm ProductManage
+            productManage.addProduct(liveItem);
         }
 
         // BẢO VỆ ĐA LUỒNG: Đồng bộ hóa trên chính vật phẩm để chặn đứng spam click tạo 2 phòng song song
         synchronized (liveItem) {
             if (liveItem.getStatus() != ItemStatus.ACTIVE) {
-                System.err.println("Lỗi: Vật phẩm đã nằm trong phiên khác hoặc đã bán.");
-                return false;
+                throw new AuctionException(AuctionErrorCode.ITEM_IS_LOCKED);
             }
 
             Auction newAuction = new Auction(liveItem, sellerId, stepPrice, startTime, endTime);
             boolean isSaved = auctionDAO.insertAuction(newAuction);
 
-            if (isSaved) {
-                // 1. Đẩy lên RAM điều phối vòng đời đếm giờ công khai
-                auctionManage.addAuction(newAuction);
-
-                // 2. Đồng bộ chuyển trạng thái vật phẩm sang INACTIVE (Khóa kỹ thuật số)
-                itemDAO.updateStatus(itemId, com.auction.enums.ItemStatus.INACTIVE.name());
-                liveItem.setStatus(com.auction.enums.ItemStatus.INACTIVE);
-                return true;
+            if (!isSaved) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to save new auction to the database.");
             }
+            // 1. Đẩy lên RAM điều phối vòng đời đếm giờ công khai
+            auctionManage.addAuction(newAuction);
+
+            // 2. Đồng bộ chuyển trạng thái vật phẩm sang INACTIVE (Khóa kỹ thuật số)
+            itemDAO.updateStatus(itemId, com.auction.enums.ItemStatus.INACTIVE.name());
+            liveItem.setStatus(com.auction.enums.ItemStatus.INACTIVE);
         }
-        return false;
     }
 
     /**
      * Xử lý đặt giá (Process Bid)
-     * Luồng: Lock Auction -> Freeze tiền mới -> Place Bid RAM -> Unfreeze tiền cũ -> Update DB Auction
+     * Luồng: Lock Auction -> Check bước giá & Đóng băng tiền -> Gọi Model RAM thực thi -> Đồng bộ DB
+     * 🔥 SỬA ĐỒNG BỘ: Đơn giản hóa cấu trúc code cực kỳ Clean nhờ tận dụng Exception từ Model gửi lên
      */
-    public boolean processBid(Bidder bidder, String auctionId, double amount) {
+    public void processBid(Bidder bidder, String auctionId, double amount) {
         Auction auction = auctionManage.getAuctionById(auctionId);
 
+        // 🔥 TÁI NẠP BỘ ĐỆM: Nếu phiên trên RAM bị hạ tải, hồi sinh nó lên RAM
         if (auction == null) {
-            System.err.println("Lỗi: Phiên đấu giá không tồn tại");
-            return false;
+            auction = auctionDAO.findById(auctionId).orElse(null);
+            if (auction != null) {
+                itemDAO.findById(auction.getItemId()).ifPresent(auction::setItem);
+                auctionManage.addAuction(auction);
+            } else {
+                throw new AuctionException(AuctionErrorCode.AUCTION_NOT_FOUND);
+            }
         }
 
+        // Chốt chặn trạng thái online vật lý
         if (!connectionManage.isUserOnline(bidder.getId())) {
-            System.err.println("Lỗi: Người dùng " + bidder.getUsername() + " không online.");
-            return false;
+            throw new AuctionException(AuctionErrorCode.BIDDER_NOT_ONLINE);
         }
 
-        // Khóa đúng đối tượng auction để đảm bảo tính tuần tự
+        // Khóa đúng đối tượng auction để bảo đảm tính tuần tự tuyệt đối
         synchronized (auction) {
+            // ⚠️ MẸO HIỆU NĂNG TỐI ƯU: Đọc nhanh giá đỉnh hiện tại trên RAM để chặn sớm trước khi gọi sang DB
+            if (amount < auction.getCurrentPrice() + auction.getStepPrice()) {
+                throw new AuctionException(AuctionErrorCode.BID_AMOUNT_TOO_LOW);
+            }
+
+            // Lưu thông tin người dẫn đầu cũ để hoàn trả tài sản sau
+            String oldHighestBidderId = auction.getHighestBidderId();
+            double oldPrice = auction.getCurrentPrice();
+
+            // 1. Thực hiện đóng băng tài sản của người đặt giá mới dưới Database (Atomic Update)
+            boolean freezeSuccess = userDAO.freezeMoney(bidder.getId(), amount);
+            if (!freezeSuccess) {
+                throw new WalletException(WalletErrorCode.INSUFFICIENT_BALANCE);
+            }
+
             try {
-                // 1. Lưu thông tin người dẫn đầu cũ để hoàn tiền sau
-                String oldHighestBidderId = auction.getHighestBidderId();
-                double oldPrice = auction.getCurrentPrice();
-
-                // 2. Thực hiện đóng băng tiền của người đặt giá mới trong Database
-                // Sử dụng cơ chế Atomic Update (WHERE available >= amount) chống race condition
-                boolean freezeSuccess = userDAO.freezeMoney(bidder.getId(), amount);
-                if (!freezeSuccess) {
-                    System.err.println("Thất bại: Bidder " + bidder.getUsername() + " không đủ tiền khả dụng.");
-                    return false;
-                }
-
-                // 3. Thực hiện đặt giá trên Logic RAM
                 String newBidId = UUID.randomUUID().toString();
+
+                // 2. Gọi mô hình RAM thực hiện kiểm tra sâu và tiến hành đột biến dữ liệu.
+                // Nếu Model phát hiện ra lỗi (vừa hết giờ xong trong tích tắc), nó sẽ ném văng Exception tại đây.
                 BidTransaction resultBid = auction.placeBid(bidder, amount, newBidId);
 
-                if (resultBid.getStatus() == BidStatus.ACCEPTED) {
-                    // Đã chấp nhận trên RAM -> Cập nhật lại số dư RAM cho Bidder hiện tại
-                    synchronized (bidder) {
-                        bidder.freeze(amount);
-                    }
-
-                    // 4. Cập nhật Database cho phiên đấu giá (Giá mới, Người dẫn đầu mới)
-                    boolean updateAuctionDB = auctionDAO.updatePriceAndWinner(
-                            auctionId, amount, bidder.getId(), newBidId
-                    );
-
-                    if (updateAuctionDB) {
-                        // 🔥 TÍCH HỢP TẠI ĐÂY: Lưu biên lai giao dịch thành công ('ACCEPTED') xuống DB bảng bid_transactions
-                        // Dữ liệu từ đối tượng 'resultBid' đã có sẵn đầy đủ id, amount, status, và time
-                        bidTransactionDAO.insertBid(resultBid);
-
-                        // 5. Giải phóng tiền cho người bị Outbid (Người dẫn đầu cũ)
-                        if (oldHighestBidderId != null && !oldHighestBidderId.equals(bidder.getId())) {
-                            userDAO.unfreezeMoney(oldHighestBidderId, oldPrice);
-                            // Lưu ý: Việc cập nhật RAM cho người cũ sẽ được xử lý khi họ thực hiện hành động tiếp theo
-                            // hoặc thông qua một hệ thống Cache/UserManage nếu bạn muốn đồng bộ tức thì 100%.
-
-                            // 🔥 BỔ SUNG TẠI ĐÂY: Chuyển biên lai cũ của người đó thành REFUNDED dưới DB
-                            bidTransactionDAO.updateStatusToRefunded(auctionId, oldHighestBidderId);
-                        }
-
-                        // Sau khi bid thành công, tự động đưa phiên này vào danh sách theo dõi của Bidder (nếu chưa có)
-                        if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
-                            userDAO.addJoinedAuction(bidder.getId(), auctionId);
-                            synchronized (bidder) {
-                                bidder.addJoinedAuction(auctionId);
-                            }
-                        }
-
-                        BidTransactionDTO bidData = new BidTransactionDTO(
-                                bidder.getUsername(),
-                                amount,
-                                LocalDateTime.now(),
-                                BidStatus.ACCEPTED.name()
-                        );
-
-                        AuctionEvent bidEvent = new AuctionEvent(
-                                auctionId,
-                                AuctionEventType.NEW_BID,
-                                bidData
-                        );
-
-                        AuctionEventBus.getInstance().publish(bidEvent);
-                        System.out.println("[AuctionService] 📢 Publish NEW_BID event");
-                        return true;
-                    } else {
-                        // Nếu update Auction DB lỗi -> Rollback tiền lại cho Bidder
-                        userDAO.unfreezeMoney(bidder.getId(), amount);
-                        synchronized (bidder) {
-                            bidder.unfreeze(amount);
-                        }
-                        return false;
-                    }
-
-                } else {
-                    // Nếu Logic RAM từ chối (ví dụ: không đủ bước giá) -> Trả lại tiền ngay
-                    userDAO.unfreezeMoney(bidder.getId(), amount);
-                    //Lưu vết bid thất bại
-                    bidTransactionDAO.insertBid(resultBid);
-                    return false;
+                // Nếu dòng code chạy được xuống đến đây -> Chắc chắn 100% lượt Đặt giá đã thành công trên RAM
+                synchronized (bidder.getId().intern()) {
+                    bidder.freeze(amount);
                 }
+
+                // 3. Đồng bộ hóa dữ liệu xuống Database cho phiên đấu giá
+                boolean updateAuctionDB = auctionDAO.updatePriceAndWinner(
+                        auctionId, amount, bidder.getId(), newBidId
+                );
+
+                if (!updateAuctionDB) {
+                    // Nếu lỗi ghi DB, chủ động ném lỗi để đẩy luồng xuống khối catch xử lý Rollback hoàn tiền
+                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Sync price to database failed.");
+                }
+
+                // 4. Ghi biên lai giao dịch thành công xuống bảng lịch sử bid_transactions
+                bidTransactionDAO.insertBid(resultBid);
+
+                // 5. Giải hoàn tiền đóng băng cho người bị Outbid (Người dẫn đầu cũ)
+                if (oldHighestBidderId != null && !oldHighestBidderId.equals(bidder.getId())) {
+                    userDAO.unfreezeMoney(oldHighestBidderId, oldPrice);
+
+                    // Chuyển biên lai cũ của người bị vượt giá thành REFUNDED dưới DB
+                    bidTransactionDAO.updateStatusToRefunded(auctionId, oldHighestBidderId);
+                }
+
+                // Tự động đưa phiên này vào danh sách theo dõi của Bidder (nếu chưa có)
+                if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
+                    userDAO.addJoinedAuction(bidder.getId(), auctionId);
+                    synchronized (bidder.getId().intern()) {
+                        bidder.addJoinedAuction(auctionId);
+                    }
+                }
+
+                // 6. Đóng gói Payload phản hồi gộp duy nhất 1 gói tin truyền tải qua mạng
+                BidTransactionDTO bidData = new BidTransactionDTO(
+                        bidder.getUsername(),
+                        amount,
+                        LocalDateTime.now(),
+                        BidStatus.ACCEPTED.name()
+                );
+
+                AuctionEvent bidEvent = new AuctionEvent(
+                        auctionId,
+                        AuctionEventType.NEW_BID,
+                        bidData
+                );
+                AuctionEventBus.getInstance().publish(bidEvent);
+                System.out.println("[AuctionService] 📢 Đặt giá thành công. Broadcast NEW_BID event.");
+
             } catch (Exception e) {
-                System.err.println("Lỗi nghiêm trọng trong processBid: " + e.getMessage());
-                // Cố gắng hoàn tiền nếu có lỗi crash giữa chừng
+                // 🔥 ROLLBACK BẢO VỆ TUYỆT ĐỐI: Bất kể lỗi xảy ra do logic RAM từ chối hay lỗi nghẽn DB,
+                // hệ thống lập tức mở khóa trả lại tiền nguyên vẹn cho Bidder trong Database và RAM
                 userDAO.unfreezeMoney(bidder.getId(), amount);
-                return false;
+                synchronized (bidder.getId().intern()) {
+                    bidder.unfreeze(amount);
+                }
+
+                // Nếu là lỗi chúng ta chủ động quản lý -> ném tiếp lên cho RequestDispatcher xử lý
+                if (e instanceof com.auction.exception.BaseException) {
+                    throw e;
+                }
+                // Nếu là lỗi hệ thống không lường trước (NullPointer, SQL crash) -> bọc lại thành lỗi DB
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Fatal crash during processBid: " + e.getMessage());
             }
         }
     }
@@ -205,6 +217,9 @@ public class AuctionService {
                     // 2. Cộng tiền vào cột khả dụng cho người bán
                     userDAO.addAvailableBalance(sellerId, finalPrice);
                 }
+                else {
+                    throw new WalletException(WalletErrorCode.DEDUCTION_FAILED);
+                }
                 statusMessage = "Thông báo: Phiên " + auctionId + " ĐÃ KẾT THÚC. Người thắng: ID " + winnerId + " với giá: " + finalPrice;
                 // 🔥 SỬA BỔ SUNG: Chuyển trạng thái Item thành SOLD (Đã bán)
                 itemDAO.updateStatus(auction.getItemId(), com.auction.enums.ItemStatus.SOLD.name());
@@ -223,11 +238,9 @@ public class AuctionService {
             // 3. Cập nhật trạng thái kết thúc trong DB
             auctionDAO.updateStatus(auctionId, AuctionStatus.FINISHED.name());
 
-            // 4. ✨ PUBLISH STATUS_CHANGED EVENT ✨
+            // 4. THAY ĐỔI TẠI ĐÂY: Tinh gọn payload, loại bỏ highestId và highestPrice ra khỏi sự kiện vòng đời phòng
             Map<String, Object> statusPayload = new HashMap<>();
             statusPayload.put("newStatus", AuctionStatus.FINISHED.name());
-            statusPayload.put("highestId", winnerId);       // Đồng bộ tên khóa
-            statusPayload.put("highestPrice", finalPrice);   // Đồng bộ tên khóa
             statusPayload.put("message", statusMessage);
 
             AuctionEvent statusEvent = new AuctionEvent(
@@ -236,7 +249,6 @@ public class AuctionService {
                     statusPayload
             );
             AuctionEventBus.getInstance().publish(statusEvent);
-            System.out.println("[AuctionService] 📢 Publish STATUS_CHANGED (FINISHED) event");
 
             // 5. Xóa phòng (không ai cần broadcast nữa)
             LiveRoomManage.getInstance().clearRoom(auctionId);
@@ -308,17 +320,45 @@ public class AuctionService {
     public AuctionDetailDTO getAuctionDetail(String auctionId) {
         // 1. Lấy dữ liệu thô (Models) từ DB/RAM
         Auction auction = auctionManage.getAuctionById(auctionId); // Ưu tiên tìm trên RAM trước
+
+        // 2. NẾU RAM KHÔNG CÓ (Cache Miss - do đã bị trục xuất sau 10 phút)
         if (auction == null) {
+            System.out.println("[Cache] 🔄 Phiên " + auctionId + " đã bị hạ tải. Đang nạp lại từ DB...");
+
+            // Xuống DB tìm lại thực thể gốc
             auction = auctionDAO.findById(auctionId).orElse(null);
+
+            if (auction != null) {
+                // 🔥 THAY ĐỔI: Gộp và làm sạch đoạn nạp Item + Đánh thức Auction lên RAM (Tránh trùng lặp code cũ)
+                Item itemFromDb = itemDAO.findById(auction.getItemId()).orElse(null);
+                auction.setItem(itemFromDb);
+
+                // 🔥 ĐÁNH THỨC: Nạp lại vào RAM để tiếp tục làm bộ đệm và quản lý thời gian
+                auctionManage.addAuction(auction);
+            }
         }
 
-        // Nếu vẫn không thấy thì trả về null
-        if (auction == null) return null;
+        if (auction == null) {
+            throw new AuctionException(AuctionErrorCode.AUCTION_NOT_FOUND);
+        } // Phiên không tồn tại thật sự trong DB
+
+        // 🔥 THAY ĐỔI: Đồng bộ lấy Item từ ProductManage (RAM) trước thay vì ép xuống DB ngay lập tức
+        // Điều này giúp tận dụng tối đa bộ đệm ConcurrentHashMap của ProductManage
+        Item item = productManage.getProduct(auction.getItemId());
+        if (item == null) {
+            // Nếu bộ đệm RAM của sản phẩm bị dọn dẹp mất, ta chủ động đọc từ DB lên rồi cất ngược lại vào RAM
+            System.out.println("[AuctionService] 🔄 Product Cache Miss! Đang tái nạp vật phẩm " + auction.getItemId() + " từ DB...");
+            item = itemDAO.findById(auction.getItemId()).orElse(null);
+            if (item != null) {
+                productManage.addProduct(item);
+            }
+        }
 
         // Lấy các thông tin liên quan
-        Item item = itemDAO.findById(auction.getItemId()).orElse(null);
         List<BidTransaction> rawBidHistory = bidTransactionDAO.findTopByAuctionId(auctionId, 15);
-        String sellerName = userDAO.findById(auction.getSellerId()).get().getUsername();
+        String sellerName = userDAO.findById(auction.getSellerId())
+                .map(User::getUsername)
+                .orElse("Người bán ẩn danh");
 
         // 2. Gọi Helper để đóng gói và trả về
         return buildAuctionDetailDTO(auction, item, sellerName, rawBidHistory);
@@ -362,8 +402,10 @@ public class AuctionService {
         return rawHistory.stream().map(bid -> {
             // Lấy tên người bid (Nếu muốn tối ưu hiệu năng hơn, có thể dùng câu JOIN SQL ở DAO,
             // nhưng với Top 15 thì gọi DB ở đây vẫn chấp nhận được)
-            String bidderName = userDAO.findById(bid.getBidderId()).get().getUsername();
-            if (bidderName == null) bidderName = "Người dùng ẩn danh";
+            // 🔥 AN TOÀN SỬA ĐỔI: Sử dụng map/orElse để giải quyết Warning Optional.get()
+            String bidderName = userDAO.findById(bid.getBidderId())
+                    .map(User::getUsername)
+                    .orElse("Người dùng ẩn danh");
 
             return new BidTransactionDTO(
                     bidderName,
@@ -377,11 +419,16 @@ public class AuctionService {
     /**
      * Hủy phiên đấu giá ngay lập tức và giải phóng tiền cho người đang dẫn đầu.
      */
-    public boolean cancelAuction(String auctionId, String adminId, String reason) {
+    public void cancelAuction(String auctionId, String adminId, String reason) {
         Auction auction = auctionManage.getAuctionById(auctionId);
-        if (auction == null || adminId == null) return false;
+        if (auction == null || adminId == null) throw new AuctionException(AuctionErrorCode.AUCTION_NOT_FOUND);
 
         synchronized (auction) {
+            // Chống việc hủy một phiên đã đóng từ trước
+            if (auction.getStatus() == AuctionStatus.FINISHED || auction.getStatus() == AuctionStatus.CANCELED) {
+                throw new AuctionException(AuctionErrorCode.AUCTION_CLOSED);
+            }
+
             // 1. Hoàn tiền đóng băng cho người dẫn đầu hiện tại (nếu có)
             String currentWinnerId = auction.getHighestBidderId();
             if (currentWinnerId != null) {
@@ -402,11 +449,9 @@ public class AuctionService {
                 ramItem.setStatus(com.auction.enums.ItemStatus.ACTIVE);
             }
 
-            // 🔥 THAY ĐỔI TẠI ĐÂY: Đồng bộ các Khóa dữ liệu khi hủy phiên
+            // 🔥 THAY ĐỔI TẠI ĐÂY: Tinh gọn payload khi hủy phiên, gỡ bỏ thông tin tài chính dư thừa
             Map<String, Object> cancelPayload = new HashMap<>();
             cancelPayload.put("newStatus", AuctionStatus.CANCELED.name());
-            cancelPayload.put("highestId", currentWinnerId);
-            cancelPayload.put("highestPrice", auction.getCurrentPrice());
             cancelPayload.put("message", "Phiên đấu giá đã bị Admin cưỡng chế hủy bỏ. Lý do: " + reason);
 
             AuctionEvent cancelEvent = new AuctionEvent(
@@ -429,8 +474,6 @@ public class AuctionService {
             String logId = UUID.randomUUID().toString();
             String actionDetail = "Cưỡng chế hủy phiên đấu giá bị hủy do: " + reason;
             logDAO.insertLog(logId, adminId, actionDetail, "AUCTION", auctionId);
-
-            return true;
         }
     }
 
@@ -444,17 +487,15 @@ public class AuctionService {
      * @param bidder Người dùng join
      * @param auctionId Phiên cần join
      * @param clientSession Kết nối socket để gửi real-time notifications
-     * @return true nếu join thành công
      */
-    public boolean joinAuction(Bidder bidder, String auctionId, ClientSession clientSession) {
+    public void joinAuction(Bidder bidder, String auctionId, ClientSession clientSession) {
         Auction auction = auctionManage.getAuctionById(auctionId);
         if (auction == null) {
             auction = auctionDAO.findById(auctionId).orElse(null);
         }
 
         if (auction == null) {
-            System.err.println("Lỗi: Phiên đấu giá không tồn tại");
-            return false;
+            throw new AuctionException(AuctionErrorCode.AUCTION_NOT_FOUND);
         }
 
         // Phòng trường hợp User đã bấm Tham gia rồi nhưng click lại hoặc kết nối lại Socket
@@ -462,12 +503,11 @@ public class AuctionService {
             // 1. Lưu vào DB (bảng trung gian: bidder_joined_auctions)
             boolean savedToDB = userDAO.addJoinedAuction(bidder.getId(), auctionId);
             if (!savedToDB) {
-                System.err.println("Lỗi: Không thể lưu vào DB");
-                return false;
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to save joined auction to database.");
             }
 
             // 2. Cập nhật RAM của Bidder
-            synchronized (bidder) {
+            synchronized (bidder.getId().intern()) {
                 if (bidder.addJoinedAuction(auctionId)) {
                     System.out.println("✅ Bidder " + bidder.getUsername() + " đã join phiên " + auctionId);
                 }
@@ -481,28 +521,25 @@ public class AuctionService {
         // 4. Broadcast thông báo có người join mới
         String joinMsg = "Thông báo: " + bidder.getUsername() + " đã tham gia phiên";
         LiveRoomManage.getInstance().broadcast(auctionId, joinMsg);
-
-        return true;
     }
 
     /**
      * THAY ĐỔI: Người dùng ĐÓNG TAB CHI TIẾT (Chỉ thoát giao diện và ngắt socket)
      * Tuyệt đối không xóa dữ liệu theo dõi hoặc tiền của họ trong DB/RAM.
      */
-    public boolean leaveLiveRoom(Bidder bidder, String auctionId, ClientSession clientSession) {
+    public void leaveLiveRoom(Bidder bidder, String auctionId, ClientSession clientSession) {
         // Chỉ dọn dẹp liên kết socket, giữ nguyên tính toàn vẹn dữ liệu tài chính
         LiveRoomManage.getInstance().leaveRoom(auctionId, clientSession);
 
         String leaveMsg = "Thông báo: " + bidder.getUsername() + " đã thoát màn hình xem trực tuyến.";
         LiveRoomManage.getInstance().broadcast(auctionId, leaveMsg);
-        return true;
     }
 
     /**
      * THAY ĐỔI: BỔ SUNG THÊM NGIỆP VỤ MỚI
      * Người dùng chủ động bấm nút "Hủy theo dõi" (Unwatch) trên màn hình "Phiên của tôi"
      */
-    public boolean unwatchAuction(Bidder bidder, String auctionId) {
+    public void unwatchAuction(Bidder bidder, String auctionId) {
         Auction auction = auctionManage.getAuctionById(auctionId);
         if (auction == null) {
             auction = auctionDAO.findById(auctionId).orElse(null);
@@ -511,18 +548,16 @@ public class AuctionService {
         if (auction != null) {
             // LUẬT: Nếu đang là người dẫn đầu, tuyệt đối không được phép bỏ cuộc/ẩn danh sách!
             if (bidder.getId().equals(auction.getHighestBidderId()) && auction.getStatus() == AuctionStatus.RUNNING) {
-                System.err.println("Lỗi nghiêm trọng: Không thể hủy theo dõi phiên bạn đang dẫn đầu giá.");
-                return false;
+                throw new AuctionException(AuctionErrorCode.CANNOT_UNWATCH_LEADING_AUCTION);
             }
         }
 
         // Thực hiện xóa khỏi DB và RAM giám sát của User
         userDAO.removeJoinedAuction(bidder.getId(), auctionId);
-        synchronized (bidder) {
+        synchronized (bidder.getId().intern()) {
             bidder.removeJoinedAuction(auctionId);
         }
         System.out.println("✅ Bidder " + bidder.getUsername() + " đã ngừng theo dõi phiên " + auctionId);
-        return true;
     }
 }
 

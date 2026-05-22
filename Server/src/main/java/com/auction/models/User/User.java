@@ -116,4 +116,16 @@ public abstract class User extends Entity {
     public void setAvailableBalance(double availableBalance) {
         this.availableBalance = availableBalance;
     }
+
+    public void setEmail(String newEmail) {
+        this.email = email;
+    }
+
+    public void setUsername(String newUsername) {
+        this.username = username;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
 }

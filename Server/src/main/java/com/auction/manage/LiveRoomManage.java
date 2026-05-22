@@ -2,9 +2,9 @@ package com.auction.manage;
 
 import com.auction.enums.ActionType;
 import com.auction.network.ClientSession;
-import com.auction.server.event.AuctionObserver;
-import com.auction.server.event.AuctionEvent;
-import com.auction.server.event.AuctionEventType;
+import com.auction.event.AuctionObserver;
+import com.auction.event.AuctionEvent;
+import com.auction.event.AuctionEventType;
 import com.auction.dto.BidTransactionDTO;
 import com.auction.dto.SocketResponse;
 import com.google.gson.Gson;
@@ -97,7 +97,6 @@ public class LiveRoomManage implements AuctionObserver {
             case NEW_BID:
                 handleNewBidEvent(roomId, event.getPayload());
                 break;
-
             case TIMER_TICK:
                 handleTimerTickEvent(roomId, event.getPayload());
                 break;
@@ -129,19 +128,26 @@ public class LiveRoomManage implements AuctionObserver {
             return;
         }
 
-        // Tạo SocketResponse dùng factory method: SocketResponse.event()
+        // Tạo cấu trúc Body phản hồi thông minh gửi xuống Client chứa cả 2 thông tin
+        Map<String, Object> responseBody = new HashMap<>();
+        responseBody.put("roomId", roomId);
+        responseBody.put("highestId", bidData.getBidderName());  // Người dẫn đầu mới
+        responseBody.put("highestPrice", bidData.getAmount());   // Giá đỉnh mới
+        responseBody.put("bidTransaction", bidData);             // Nguyên thực thể DTO để vẽ dòng lịch sử
+
+        // Tạo SocketResponse với ActionType chung (ví dụ ActionType.BID_UPDATE của bạn)
         SocketResponse response = SocketResponse.event(
                 ActionType.BID_UPDATE,
-                "Có lượt đặt giá mới! " + bidData.getBidderName() + " đặt giá: " + bidData.getAmount(),
-                bidData
+                "Phòng đấu giá có biến động đặt giá mới từ: " + bidData.getBidderName(),
+                responseBody
         );
 
-        // Broadcast response đến tất cả clients trong phòng
+        // Phát loa duy nhất 1 lần xuống cho cả phòng
         String jsonMessage = gson.toJson(response);
         broadcast(roomId, jsonMessage);
 
-        System.out.println("[LiveRoom] 💰 Broadcast NEW_BID event: " + bidData.getBidderName()
-            + " đặt giá " + bidData.getAmount());
+        System.out.println("[LiveRoom] 💰 [GỘP THÀNH CÔNG] Broadcast kết quả đặt giá phòng " + roomId
+                + " | Winner: " + bidData.getBidderName() + " | Price: " + bidData.getAmount());
     }
 
     /**
@@ -167,52 +173,34 @@ public class LiveRoomManage implements AuctionObserver {
 
     /**
      * Xử lý sự kiện: Trạng thái phiên thay đổi (STATUS_CHANGED)
-     * Payload: Map hoặc Object chứa {oldStatus, newStatus}
+     * Payload: Map chứa {newStatus, message}
      * Action: Broadcast trạng thái mới đến clients (OPEN -> RUNNING -> FINISHED)
      *
      * @param roomId auctionId
      * @param payload Thông tin trạng thái cũ/mới
      */
     private void handleStatusChangedEvent(String roomId, Object payload) {
-        // 🔄 PLACEHOLDER - Implement bước tiếp theo
-        //
-        // VD implementation:
-        // 🔥 THAY ĐỔI TẠI ĐÂY: Nhận diện Map chứa thông tin chi tiết trạng thái
         if (payload instanceof Map<?, ?> statusMap) {
             String newStatus = (String) statusMap.get("newStatus");
-            String highestId = (String) statusMap.get("highestId");
-            Double highestPrice = (Double) statusMap.get("highestPrice");
             String message = (String) statusMap.get("message");
 
-            // Tạo cấu trúc Body phản hồi đồng nhất gửi xuống Client
-            Map<String, Object> responseBody = new HashMap<>();
-            responseBody.put("roomId", roomId);
-            responseBody.put("newStatus", newStatus);
-            responseBody.put("highestId", highestId != null ? highestId : "");
-            responseBody.put("highestPrice", highestPrice != null ? highestPrice : 0.0);
-
-            // Đóng gói vào mẫu SocketResponse
+            // Gói tin cực kỳ gọn nhẹ, không chứa thông tin tài chính dư thừa
             SocketResponse response = SocketResponse.event(
                     ActionType.STATUS_UPDATED,
                     message != null ? message : "Trạng thái phiên thay đổi sang: " + newStatus,
-                    responseBody
+                    Map.of("roomId", roomId, "newStatus", newStatus)
             );
 
             String jsonMessage = gson.toJson(response);
             broadcast(roomId, jsonMessage);
 
-            System.out.println("[LiveRoom] 🔄 STATUS_CHANGED: " + newStatus
-                    + " | Winner: " + highestId + " | Price: " + highestPrice);
+            System.out.println("[LiveRoom] 🔄 Vòng đời phòng đổi sang: " + newStatus);
 
-            // 🔥 TỰ ĐỘNG DỌN DẸP PHÒNG MẠNG KHI PHIÊN KẾT THÚC HOẶC BỊ HỦY
+            // Tự động giải phóng bộ nhớ khi phiên đóng cửa
             if ("FINISHED".equals(newStatus) || "CANCELED".equals(newStatus)) {
                 clearRoom(roomId);
             }
         }
-        else {
-            System.err.println("[LiveRoom] ❌ STATUS_CHANGED payload không hợp lệ");
-        }
-
     }
 
     /**
@@ -227,8 +215,7 @@ public class LiveRoomManage implements AuctionObserver {
         // 👥 PLACEHOLDER - Implement bước tiếp theo
         //
         // VD implementation:
-         if (payload instanceof Integer) {
-             Integer viewerCount = (Integer) payload;
+         if (payload instanceof Integer viewerCount) {
              SocketResponse response = SocketResponse.event(
                  ActionType.VIEWER_COUNT_UPDATED,
                  "Hiện có " + viewerCount + " người xem phiên",

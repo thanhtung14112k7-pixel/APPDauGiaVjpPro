@@ -2,6 +2,8 @@ package com.auction.service;
 
 import com.auction.enums.ActionType;
 import com.auction.enums.UserRole;
+import com.auction.exception.AuthorizationErrorCode;
+import com.auction.exception.AuthorizationException;
 import com.auction.network.ClientSession;
 
 import java.util.Map;
@@ -52,36 +54,42 @@ public class AuthorizationService {
     /**
      Kiểm tra session hiện tai có được phép chạy action hay ko
      */
-    public boolean canAccess(String action, ClientSession session){
-        if (action == null || action.trim().isEmpty()){
-            return false;
+    public void canAccess(String action, ClientSession session){
+        // Kiểm tra tính hợp lệ thô của chuỗi hành động gửi lên
+        if (action == null || action.trim().isEmpty()) {
+            throw new AuthorizationException(AuthorizationErrorCode.ACTION_UNAUTHORIZED, "Action type cannot be null or empty");
         }
 
-        //LOGIN va REGISTER ko can dang nhap
-        if (PUBLIC_ACTIONS.contains(action)){
-            return true;
+        // LOGIN và REGISTER không cần đăng nhập -> Cho qua ngay lập tức
+        if (PUBLIC_ACTIONS.contains(action)) {
+            return;
         }
 
-        // Các action còn lại đều cần có session.
+        // Kiểm tra xem User đã thiết lập Session đăng nhập hợp lệ chưa
         if (session == null || !session.isLoggedIn()) {
-            return false;
+            throw new AuthorizationException(AuthorizationErrorCode.NOT_AUTHENTICATED);
         }
 
-        // Các action chỉ cần login, không cần xét role cụ thể.
+        // Các action chỉ cần login, không cần xét quyền hạn vai trò cụ thể -> Cho qua
         if (LOGIN_REQUIRED_ACTIONS.contains(action)) {
-            return true;
+            return;
         }
 
-        // Lấy danh sách role được phép thực hiện action
+        // Bốc tách danh sách cấu hình phân quyền vai trò cho Action tương ứng
         Set<UserRole> allowedRoles = ROLE_PERMISSIONS.get(action);
 
-        // Nếu action không nằm trong bảng phân quyền,
-        // mặc định không cho chạy để tránh hở quyền.
+        // Nếu action không nằm trong danh mục cấu hình, mặc định chặn cứng để bảo vệ hệ thống
         if (allowedRoles == null) {
-            return false;
+            System.err.println("[Guard] 🚨 Cảnh báo bảo mật: Phát hiện request gọi Action chưa được cấu hình: " + action);
+            throw new AuthorizationException(AuthorizationErrorCode.ACTION_UNAUTHORIZED);
         }
 
-        // Kiểm tra role hiện tại có thuộc nhóm được phép không.
-        return allowedRoles.contains(session.getRole());
+        // Kiểm tra xem Vai trò hiện tại của Session có nằm trong Whitelist được cho phép hay không
+        if (!allowedRoles.contains(session.getRole())) {
+            System.err.println("[Guard] ⛔ Từ chối truy cập: User [" + session.getUserId()
+                    + "] mang Role [" + session.getRole() + "] cố tình gọi Action hạn chế [" + action + "]");
+
+            throw new AuthorizationException(AuthorizationErrorCode.ROLE_ACCESS_DENIED);
+        }
     }
 }

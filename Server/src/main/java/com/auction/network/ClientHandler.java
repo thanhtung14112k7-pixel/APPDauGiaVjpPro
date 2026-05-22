@@ -1,5 +1,5 @@
 package com.auction.network;
-/**
+/*
  ClientHandler xu ly 1 client cụ thể
  Nhiệm vụ:
  -> Đọc request từ client gửi lên
@@ -14,7 +14,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import com.auction.manage.ConnectionManage;
+
+import com.auction.exception.AuthenticationException;
 
 public class ClientHandler implements Runnable {
     private final Socket socket;
@@ -51,8 +52,12 @@ public class ClientHandler implements Runnable {
         } finally {
             // 🔥 ĐÂY LÀ CHÌA KHÓA: Dù crash hay tắt app bình thường, block finally luôn chạy
             System.out.println("Hệ thống: Tiến hành kích hoạt luồng dọn dẹp tự động...");
-            if (session != null) {
-                session.close();
+            try {
+                if (session != null) {
+                    session.close();
+                }
+            } catch (AuthenticationException e) {
+                System.out.println(e.getMessage());
             }
         }
     }

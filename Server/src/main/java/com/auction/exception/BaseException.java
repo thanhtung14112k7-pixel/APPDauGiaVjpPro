@@ -1,16 +1,14 @@
 package com.auction.exception;
 
-//Đây là lớp cơ sở cho tất cả các ngoại lệ tùy chỉnh trong ứng dụng của bạn.
-//Nó mở rộng lớp Exception của Java
-//Và thêm các thuộc tính bổ sung như errorCode và timestamp để cung cấp thông tin chi tiết về lỗi.
-public abstract class BaseException extends Exception {
+public abstract class BaseException extends RuntimeException {
     private final String errorCode;
     private final long timestamp;
 
+    // Constructor nhận thông điệp tùy biến và mã lỗi dạng String từ các Enum con
     public BaseException(String message, String errorCode) {
-        super(message); // Gửi message lên lớp Exception của Java
+        super(message);
         this.errorCode = errorCode;
-        this.timestamp = System.currentTimeMillis();
+        this.timestamp = System.currentTimeMillis(); // Giữ nguyên ý tưởng tuyệt vời của bạn để làm log
     }
 
     public String getErrorCode() {

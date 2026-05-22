@@ -1,4 +1,4 @@
-package com.auction.server.event;
+package com.auction.event;
 
 /**
  * ============================================================

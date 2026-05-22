@@ -64,8 +64,7 @@ public class ConnectionManage {
                 try {
                     // 1. (Tùy chọn) Gọi hàm đóng kết nối vật lý của Socket bên trong ClientSession
                     // Ví dụ nếu class ClientSession của bạn có hàm close() hoặc disconnect():
-                    // session.close();
-
+                    session.close();
                     System.out.println("Server: Đã đóng thành công 1 đường dây Socket Live.");
                 } catch (Exception e) {
                     System.err.println("❌ Lỗi khi đóng kết nối vật lý của session: " + e.getMessage());
@@ -85,13 +84,24 @@ public class ConnectionManage {
         return activeConnections.size();
     }
 
-    // Gửi tin nhắn Broadcast đến TẤT CẢ thiết bị của 1 User
+    /**
+     * Gửi tin nhắn Broadcast đến TẤT CẢ thiết bị của 1 User
+     * 🔥 CẢI TIẾN: Tích hợp cơ chế tự dọn dẹp kết nối ma (Self-healing) khi gửi lỗi
+     */
     public void sendMessageToUser(String userId, String message) {
         Set<ClientSession> sessions = activeConnections.get(userId);
-        if (sessions != null) {
-            for (ClientSession session : sessions) {
-                // Giả định ClientSession có hàm send()
-                // session.send(message);
+        if (sessions == null || sessions.isEmpty()) return;
+
+        for (ClientSession session : sessions) {
+            try {
+                // Thực hiện bắn tin nhắn real-time về giao diện Client
+                session.sendMessage(message);
+            } catch (Exception e) {
+                // Nếu bắn tin nhắn lỗi (chứng tỏ Socket này đã chết ngầm từ trước)
+                System.err.println("[Connection] ⚠️ Phát hiện kết nối ma của User [" + userId + "], tiến hành trục xuất...");
+
+                // Tự động tháo dỡ kết nối lỗi này ra khỏi Set ngay lập tức để giải phóng RAM
+                removeConnection(userId, session);
             }
         }
     }
