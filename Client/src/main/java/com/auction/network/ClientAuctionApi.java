@@ -2,23 +2,20 @@ package com.auction.network;
 
 import com.auction.dto.*;
 import com.auction.enums.ActionType;
+import com.auction.service.ClientSocketService;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 
-import java.io.BufferedReader;
-import java.io.PrintWriter;
 import java.lang.reflect.Type;
 import java.util.List;
 
 /**
- * ClientAuctionApi gửi các request liên quan đến đấu giá từ Client sang Server.
+ * ClientAuctionApi giờ sẽ tạo request còn việc ửi đi và nhận sẽ la của ClientSocketService
  *
  * Vai trò:
  * - Tạo Request DTO đúng với từng action đấu giá.
  * - Bọc Request DTO vào SocketRequest.
- * - Gửi request qua socket.
- * - Nhận SocketResponse từ Server.
  * - Cung cấp helper để parse response.body thành DTO cụ thể.
  *
  * Lưu ý:
@@ -164,82 +161,53 @@ public class ClientAuctionApi {
 
 
     /**
-     * Hàm gửi request chung cho mọi action đấu giá.
+     * Ham gui request chung cho moi action dau gia.
      *
-     * Tất cả method phía trên đều gom về đây để tránh lặp logic:
-     * - lấy socket
-     * - tạo SocketRequest
-     * - gửi JSON
-     * - đọc JSON response
-     * - parse thành SocketResponse
+     * Tat ca method phia tren deu gom ve day de tranh lap logic:
+     * - tao SocketRequest
+     * - chuan hoa request body thanh JsonObject
+     * - giao request cho ClientSocketService gui sang Server
+     * - nhan dung RESPONSE co requestId trung voi request vua gui
      */
     private SocketResponse sendRequest(ActionType actionType, Object requestBody) {
         /*
-         * socketRequest được khai báo ngoài try để nếu xảy ra exception,
-         * catch vẫn lấy được requestId và action trả về trong SocketResponse.failure.
+         * socketRequest duoc khai bao ngoai try de neu xay ra exception,
+         * catch van lay duoc requestId va action tra ve trong SocketResponse.failure.
          */
         SocketRequest socketRequest = null;
 
         try {
             /*
-             * ClientNetworkManager là nơi giữ kết nối socket duy nhất tới Server.
-             * Các API như AuthApi/AuctionApi đều dùng chung connection này.
-             */
-            ClientNetworkManager network = ClientNetworkManager.getInstance();
-
-            PrintWriter writer = network.getWriter();   //writer dùng để gửi 1 dòng JSON sang Server.
-            BufferedReader reader = network.getReader();    //reader dùng để đọc 1 dòng JSON response Server trả về.
-
-            /*
-             * requestBody có thể là DTO như PlaceBidRequest, CreateAuctionRequest,
-             * hoặc JsonObject rỗng với action không cần body.
-             * toJsonObject() chuẩn hóa tất cả thành JsonObject.
+             * requestBody co the la DTO nhu PlaceBidRequest, CreateAuctionRequest,
+             * hoac JsonObject rong voi action khong can body.
+             * toJsonObject() chuan hoa tat ca thanh JsonObject.
              */
             JsonObject body = toJsonObject(requestBody);
 
             /*
-             * SocketRequest là phong bì chung Client gửi lên Server.
-             * actionType.name() tạo action chuẩn theo enum, vị dụ "PLACE_BID".
-             * body là dữ liệu chi tiết của action đó.
+             * SocketRequest la phong bi chung Client gui len Server.
+             * actionType.name() tao action chuan theo enum, vi du "PLACE_BID".
+             * body la du lieu chi tiet cua action do.
              */
             socketRequest = new SocketRequest(ActionType.valueOf(actionType.name()), body);
-            writer.println(gson.toJson(socketRequest));     //Chuyển SocketRequest thành JSON string rồi gửi qua socket.
 
             /*
-             * Chờ Server xử lý và trả về một dòng JSON.
-             * Server hiện trả theo format SocketResponse.
+             * Khong doc socket truc tiep trong API nua.
+             * ClientSocketService la noi duy nhat doc message tu Server,
+             * nen no co the tach RESPONSE cho request va EVENT realtime cho UI.
              */
-            String responseJson = reader.readLine();
-
-            /*
-             * Nếu Server đóng kết nối hoặc không trả gì, responseJson sẽ null/rỗng.
-             * Khi đó vẫn trả SocketResponse.failure để Controller UI có message hiển thị.
-             */
-            if (responseJson == null || responseJson.trim().isEmpty()) {
-                return SocketResponse.failure(
-                        socketRequest.getRequestId(),
-                        ActionType.valueOf(actionType.name()),
-                        "The server did not return any data.",
-                        "EMPTY_RESPONSE"
-                );
-            }
-
-            /*
-             * Parse JSON response thành SocketResponse.
-             * Lúc này Client chưa parse body ngay, vì mỗi action có body khác nhau.
-             */
-            return gson.fromJson(responseJson, SocketResponse.class);
+            return ClientSocketService.getInstance().sendRequest(socketRequest);
 
         } catch (Exception e) {
             /*
-             * Nếu lỗi kết nối, lỗi parse JSON, hoặc lỗi socket bất kỳ,
-             * không throw lên UI mà đổi thành SocketResponse.failure.
+             * Neu loi ket noi, loi parse JSON, hoac loi socket bat ky,
+             * khong throw len UI ma doi thanh SocketResponse.failure.
              */
             e.printStackTrace();
 
             /*
-             * Nếu lỗi xảy ra trước khi tạo SocketRequest, requestId sẽ là null.
-             * Nếu đã tạo được SocketRequest, giữ requestId để dễ debug.
+             * Neu loi xay ra truoc khi tao SocketRequest, requestId se la null.
+             * Neu da tao duoc SocketRequest, giu requestId de de debug.
              */
             String requestId = socketRequest == null ? null : socketRequest.getRequestId();
 
@@ -251,7 +219,6 @@ public class ClientAuctionApi {
             );
         }
     }
-
 
     /**
      * Convert request body thành JsonObject.

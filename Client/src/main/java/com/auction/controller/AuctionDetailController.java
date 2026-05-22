@@ -368,7 +368,24 @@ public class AuctionDetailController {
         showInfo(response.getMessage());
         loadAuctionDetail();
     }
+    /**
+     * FXML can co: <Button onAction="#handleOpenLiveBidding" ... />
+     *
+     * Luong vao phong live bidding:
+     * - Kiem tra auctionId hien tai co hop le khong.
+     * - Chuyen sang man live-bidding.fxml thong qua SceneNavigator.
+     * - SceneNavigator se truyen auctionId sang LiveBiddingController.
+     * - LiveBiddingController dung auctionId nay de subscribe realtime room.
+     */
+    @FXML
+    private void handleOpenLiveBidding() {
+        if (isBlank(auctionId)) {
+            showError("Khong tim thay phien dau gia de vao phong live bidding.");
+            return;
+        }
 
+        SceneNavigator.showLiveBidding(auctionId);
+    }
     /**
      * Đọc và parse số tiền người dùng nhập.
      */

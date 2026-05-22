@@ -7,14 +7,12 @@ import com.auction.dto.SocketRequest;
 import com.auction.dto.SocketResponse;
 import com.auction.enums.ActionType;
 import com.auction.enums.UserRole;
+import com.auction.service.ClientSocketService;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
-import java.io.BufferedReader;
-import java.io.PrintWriter;
-
 /**
- * ClientAuthApi gửi các request xác thực sang Server.
+ * ClientAuthApi tạo các request cho ClientSocketService gui va nhận về response
  *
  * API này không trả LoginResponse/RegisterResponse/LogoutResponse nữa.
  * Mọi phản hồi từ Server đều là SocketResponse.
@@ -58,27 +56,15 @@ public class ClientAuthApi {
         SocketRequest socketRequest = null;
 
         try {
-            ClientNetworkManager network = ClientNetworkManager.getInstance();
-            PrintWriter writer = network.getWriter();
-            BufferedReader reader = network.getReader();
-
             JsonObject body = gson.toJsonTree(requestBody).getAsJsonObject();
             socketRequest = new SocketRequest(ActionType.valueOf(action), body);
 
-            writer.println(gson.toJson(socketRequest));
-
-            String responseJson = reader.readLine();
-
-            if (responseJson == null || responseJson.trim().isEmpty()) {
-                return SocketResponse.failure(
-                        socketRequest.getRequestId(),
-                        ActionType.valueOf(action),
-                        "The server did not return any data.",
-                        "EMPTY_RESPONSE"
-                );
-            }
-
-            return gson.fromJson(responseJson, SocketResponse.class);
+            /*
+             * Khong doc socket truc tiep trong API nua.
+             * ClientSocketService la noi duy nhat doc message tu Server,
+             * nen no co the tach RESPONSE cho request va EVENT realtime cho UI.
+             */
+            return ClientSocketService.getInstance().sendRequest(socketRequest);
 
         } catch (Exception e) {
             e.printStackTrace();

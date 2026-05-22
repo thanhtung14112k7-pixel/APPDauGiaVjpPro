@@ -1,6 +1,8 @@
 package com.auction.util;
 
 import com.auction.controller.AuctionDetailController;
+import com.auction.controller.AuctionDetailController;
+import com.auction.controller.LiveBiddingController;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -66,10 +68,21 @@ public class SceneNavigator {
         loadScene(SELLER_ITEM_MANAGEMENT_VIEW, "Seller Item Management");
     }
 
-    public static void showLiveBidding() {
-        loadScene(LIVE_BIDDING_VIEW, "Live Bidding");
-    }
+    public static void showLiveBidding(String auctionId) {
+        if (auctionId == null || auctionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("auctionId must not be empty.");
+        }
 
+        FXMLLoader loader = loadSceneAndReturnLoader(LIVE_BIDDING_VIEW, "Live Bidding");
+
+        /*
+         * live-bidding.fxml tu tao LiveBiddingController.
+         * Sau khi load xong, lay controller ra va truyen auctionId vao.
+         * Tu day LiveBiddingController moi biet can subscribe realtime cho phien dau gia nao.
+         */
+        LiveBiddingController controller = loader.getController();
+        controller.setAuctionId(auctionId);
+    }
     public static void showAuctionDetail(String auctionId) {
         if (auctionId == null || auctionId.trim().isEmpty()) {
             throw new IllegalArgumentException("auctionId must not be empty.");
@@ -88,6 +101,8 @@ public class SceneNavigator {
     private static void loadScene(String fxmlPath, String title) {
         loadSceneAndReturnLoader(fxmlPath, title);
     }
+
+
 
     private static FXMLLoader loadSceneAndReturnLoader(String fxmlPath, String title) {
         if (mainStage == null) {
