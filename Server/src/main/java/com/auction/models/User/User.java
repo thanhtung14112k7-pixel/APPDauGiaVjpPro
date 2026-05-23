@@ -118,11 +118,11 @@ public abstract class User extends Entity {
     }
 
     public void setEmail(String newEmail) {
-        this.email = email;
+        this.email = newEmail;
     }
 
     public void setUsername(String newUsername) {
-        this.username = username;
+        this.username = newUsername;
     }
 
     public void setPassword(String password) {

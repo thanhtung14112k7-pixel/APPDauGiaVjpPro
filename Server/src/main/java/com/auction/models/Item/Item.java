@@ -88,7 +88,7 @@ public abstract class Item extends Entity implements Serializable {
     }
 
     public void setStatus(ItemStatus newStatus) {
-        this.status = status;
+        this.status = newStatus;
     }
 
     public Object getCreatedAt() {
