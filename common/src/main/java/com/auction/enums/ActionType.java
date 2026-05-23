@@ -15,14 +15,40 @@ public enum ActionType {
     GET_AUCTION_DETAIL,         // lấy chi tiết 1 phiên đáu giá theo auctioId
     CREATE_AUCTION,             // tạo phiên đấu giá mới, chỉ seller và admin được gọi
     PLACE_BID,                  // đặt giá vào 1 phiên dddassu giá, chỉ bidder
-    SUBSCRIBE_AUCTION,          // đăng kí nhận Realtime Update của 1 phiên đấu giá, dùng khi Client mở màn hình chi tiết phiên
-    UNSUBSCRIBE_AUCTION,        // hủy đăng kí Realtime Update, dùng khi Client rời màn hình chi tiết phiên
     CANCEL_AUCTION,              // hủy phiên đấu giá, seller hoặc admin được gọi, sau này nên kiểm tra thêm Seller chỉ dc xóa của chính mình
     BID_UPDATE,
     TIME_UPDATE,
     STATUS_UPDATED,
-    VIEWER_COUNT_UPDATED,
 
+    /**
+     * Sự kiện: Người dùng đăng ký theo dõi phiên (Business State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: joinAuction() trong AuctionService
+     * Mục đích: Ghi nhận tính toàn vẹn dữ liệu trong DB/RAM
+     */
+    AUCTION_SUBSCRIBED,
 
+    /**
+     * Sự kiện: Người dùng hủy đăng ký theo dõi phiên (Business State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: leaveAuction() trong AuctionService
+     * Mục đích: Xóa kiểm toàn từ DB/RAM + Notify clients
+     */
+    AUCTION_UNSUBSCRIBED,
 
+    /**
+     * Sự kiện: Người dùng mở tab chi tiết để xem real-time (UI/Network State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: joinLiveRoom() trong AuctionService
+     * Mục đích: Thêm ClientSession vào phòng + Broacast viewer count tăng
+     */
+    LIVE_ENTERED,
+
+    /**
+     * Sự kiện: Người dùng đóng tab chi tiết nhưng vẫn tracking (UI/Network State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: leaveLiveRoom() trong AuctionService
+     * Mục đích: Xóa ClientSession khỏi phòng + Broadcast viewer count giảm
+     */
+    LIVE_EXITED
 }

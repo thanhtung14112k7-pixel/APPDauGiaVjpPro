@@ -478,17 +478,20 @@ public class AuctionService {
     }
 
     /**
-     * Bidder join vào phiên đấu giá để tracking + receive notifications
-     * Luồng: -> chỉ ghi ấn nút tham gia phiên
-     * 1. Lưu vào DB bảng bidder_joined_auctions (persist dữ liệu)
-     * 2. Cập nhật RAM của Bidder (joinedAuctionIds)
-     * 3. Thêm ClientSession vào LiveRoom (để receive real-time broadcasts)
+     * ============================================================
+     * joinAuction() - CHỈ ghi nhận dữ liệu business (DB/RAM)
+     * ============================================================
+     * - Lưu vào DB bảng bidder_joined_auctions (persist tính toàn vẹn)
+     * - Cập nhật RAM Bidder (joinedAuctionIds)
+     * - KHÔNG thêm socket connection ở đây
+     * - KHÔNG gửi broadcast ở đây
+     * Luồng: AUCTION_SUBSCRIBED event → LiveRoomManage broadcast
      *
-     * @param bidder Người dùng join
-     * @param auctionId Phiên cần join
-     * @param clientSession Kết nối socket để gửi real-time notifications
+     * @param bidder Người dùng muốn tracking phiên
+     * @param auctionId Phiên cần tracking
      */
-    public void joinAuction(Bidder bidder, String auctionId, ClientSession clientSession) {
+    public void joinAuction(Bidder bidder, String auctionId) {
+        // Kiểm tra phiên tồn tại
         Auction auction = auctionManage.getAuctionById(auctionId);
         if (auction == null) {
             auction = auctionDAO.findById(auctionId).orElse(null);
@@ -498,66 +501,200 @@ public class AuctionService {
             throw new AuctionException(AuctionErrorCode.AUCTION_NOT_FOUND);
         }
 
-        // Phòng trường hợp User đã bấm Tham gia rồi nhưng click lại hoặc kết nối lại Socket
+        // =================================================================
+        // BƯỚC 1: Ghi nhận Business State (DB/RAM)
+        // =================================================================
         if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
-            // 1. Lưu vào DB (bảng trung gian: bidder_joined_auctions)
+            // 1.1 Lưu vào DB (bảng trung gian: bidder_joined_auctions)
             boolean savedToDB = userDAO.addJoinedAuction(bidder.getId(), auctionId);
             if (!savedToDB) {
-                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to save joined auction to database.");
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR,
+                        "Failed to save joined auction to database.");
             }
 
-            // 2. Cập nhật RAM của Bidder
+            // 1.2 Cập nhật RAM của Bidder (thread-safe)
             synchronized (bidder.getId().intern()) {
                 if (bidder.addJoinedAuction(auctionId)) {
-                    System.out.println("✅ Bidder " + bidder.getUsername() + " đã join phiên " + auctionId);
+                    System.out.println("[AuctionService] ✅ Bidder " + bidder.getUsername()
+                            + " đã đăng ký tracking phiên " + auctionId);
+                } else {
+                    System.out.println("[AuctionService] ⚠️ Bidder " + bidder.getUsername()
+                            + " tracking thất bại");
                 }
-                System.out.println("Join không thành công");
             }
+
+            // =================================================================
+            // BƯỚC 2: Phát sự kiện AUCTION_SUBSCRIBED (ĐÃ SỬA: ĐƯA VÀO TRONG KHỐI IF)
+            // =================================================================
+            // Payload cho event: {username, message, viewerCount}
+            Map<String, Object> subscribePayload = new HashMap<>();
+            subscribePayload.put("username", bidder.getUsername());
+            subscribePayload.put("message", "Bidder " + bidder.getUsername() + " đã đăng ký theo dõi phiên.");
+            subscribePayload.put("viewerCount", LiveRoomManage.getInstance().getRoomSize(auctionId));
+
+            AuctionEvent subscribeEvent = new AuctionEvent(
+                    auctionId,
+                    AuctionEventType.AUCTION_SUBSCRIBED,
+                    subscribePayload
+            );
+            AuctionEventBus.getInstance().publish(subscribeEvent);
+            System.out.println("[AuctionService] 📢 Publish AUCTION_SUBSCRIBED event thành công lần đầu.");
+
+        } else {
+            System.out.println("[AuctionService] ℹ️ Bidder " + bidder.getUsername()
+                    + " đã tracking phiên này từ trước, bỏ qua phát sự kiện.");
         }
-
-        // 3. Thêm vào LiveRoom để nhận broadcasts real-time
-        LiveRoomManage.getInstance().joinRoom(auctionId, clientSession);
-
-        // 4. Broadcast thông báo có người join mới
-        String joinMsg = "Thông báo: " + bidder.getUsername() + " đã tham gia phiên";
-        LiveRoomManage.getInstance().broadcast(auctionId, joinMsg);
     }
 
     /**
-     * THAY ĐỔI: Người dùng ĐÓNG TAB CHI TIẾT (Chỉ thoát giao diện và ngắt socket)
-     * Tuyệt đối không xóa dữ liệu theo dõi hoặc tiền của họ trong DB/RAM.
+     * ============================================================
+     * joinLiveRoom() - SOCKET CONNECTION + BUSINESS STATE
+     * ============================================================
+     * Người dùng mở tab chi tiết để xem realtime updates
+     * Luồng:
+     * 1. Gọi joinAuction() để ghi nhận business state (nếu chưa tracking)
+     * 2. Thêm ClientSession vào LiveRoomManage
+     * 3. Publish LIVE_ENTERED event (Broadcast viewer count tăng)
+     *
+     * @param bidder Người dùng vừa mở tab chi tiết
+     * @param auctionId Phiên cần xem
+     * @param clientSession Kết nối socket
+     */
+    public void joinLiveRoom(Bidder bidder, String auctionId, ClientSession clientSession) {
+        // BƯỚC 1: Ghi nhận business state (nếu chưa tracked)
+        joinAuction(bidder, auctionId);
+
+        // BƯỚC 2: Thêm ClientSession vào phòng
+        LiveRoomManage.getInstance().joinRoom(auctionId, clientSession);
+        System.out.println("[AuctionService] ✅ ClientSession của " + bidder.getUsername()
+                + " đã được thêm vào phòng " + auctionId);
+
+        // BƯỚC 3: Phát sự kiện LIVE_ENTERED
+        int viewerCount = LiveRoomManage.getInstance().getRoomSize(auctionId);
+        Map<String, Object> liveEnteredPayload = new HashMap<>();
+        liveEnteredPayload.put("username", bidder.getUsername());
+        liveEnteredPayload.put("message", bidder.getUsername() + " vừa mở tab livestream.");
+        liveEnteredPayload.put("viewerCount", viewerCount);
+
+        AuctionEvent liveEnteredEvent = new AuctionEvent(
+                auctionId,
+                AuctionEventType.LIVE_ENTERED,
+                liveEnteredPayload
+        );
+        AuctionEventBus.getInstance().publish(liveEnteredEvent);
+        System.out.println("[AuctionService] 📢 Publish LIVE_ENTERED event. Viewer count: " + viewerCount);
+    }
+
+    /**
+     * ============================================================
+     * leaveLiveRoom() - CHỈ NGẮT SOCKET CONNECTION
+     * ============================================================
+     * Người dùng ĐÓNG TAB CHI TIẾT nhưng vẫn tracking phiên
+     * Tuyệt đối KHÔNG xóa business state (DB/RAM tracking data)
+     * Luồng:
+     * 1. Xóa ClientSession khỏi LiveRoomManage
+     * 2. Publish LIVE_EXITED event (Broadcast viewer count giảm)
+     *
+     * @param bidder Người dùng vừa đóng tab chi tiết
+     * @param auctionId Phiên đó
+     * @param clientSession Kết nối socket cần ngắt
      */
     public void leaveLiveRoom(Bidder bidder, String auctionId, ClientSession clientSession) {
-        // Chỉ dọn dẹp liên kết socket, giữ nguyên tính toàn vẹn dữ liệu tài chính
+        // BƯỚC 1: Xóa ClientSession khỏi phòng (ngắt socket connection)
         LiveRoomManage.getInstance().leaveRoom(auctionId, clientSession);
+        System.out.println("[AuctionService] ❌ ClientSession của " + bidder.getUsername()
+                + " đã rời khỏi phòng " + auctionId);
 
-        String leaveMsg = "Thông báo: " + bidder.getUsername() + " đã thoát màn hình xem trực tuyến.";
-        LiveRoomManage.getInstance().broadcast(auctionId, leaveMsg);
+        // BƯỚC 2: Phát sự kiện LIVE_EXITED
+        int viewerCount = LiveRoomManage.getInstance().getRoomSize(auctionId);
+        Map<String, Object> liveExitedPayload = new HashMap<>();
+        liveExitedPayload.put("username", bidder.getUsername());
+        liveExitedPayload.put("message", bidder.getUsername() + " đã đóng tab livestream.");
+        liveExitedPayload.put("viewerCount", viewerCount);
+
+        AuctionEvent liveExitedEvent = new AuctionEvent(
+                auctionId,
+                AuctionEventType.LIVE_EXITED,
+                liveExitedPayload
+        );
+        AuctionEventBus.getInstance().publish(liveExitedEvent);
+        System.out.println("[AuctionService] 📢 Publish LIVE_EXITED event. Viewer count: " + viewerCount);
     }
 
     /**
-     * THAY ĐỔI: BỔ SUNG THÊM NGIỆP VỤ MỚI
-     * Người dùng chủ động bấm nút "Hủy theo dõi" (Unwatch) trên màn hình "Phiên của tôi"
+     * ============================================================
+     * leaveAuction() - HỦY TRACKING + NGẮT SOCKET (ĐÃ SỬA THAM SỐ)
+     * ============================================================
+     * Người dùng bấm nút "Hủy theo dõi" trên màn hình "Phiên của tôi" hoặc nút Unwatch trực diện
+     * Luồng:
+     * 1. Kiểm tra validation: không loại bỏ nếu đang leading + auction RUNNING
+     * 2. Xóa khỏi DB/RAM (bidder_joined_auctions, joinedAuctionIds)
+     * 3. Xóa ClientSession khỏi LiveRoom (Ngắt kết nối để tránh rò rỉ gói tin đếm giây)
+     * 4. Publish AUCTION_UNSUBSCRIBED event (Broadcast state change)
+     *
+     * @param bidder Người dùng muốn ngừng tracking
+     * @param auctionId Phiên cần ngừng
+     * @param clientSession Kết nối mạng để dọn dẹp triệt để ổ cắm Socket
+     * @throws AuctionException nếu bidder đang dẫn đầu trên phiên RUNNING
      */
-    public void unwatchAuction(Bidder bidder, String auctionId) {
+    public void leaveAuction(Bidder bidder, String auctionId, ClientSession clientSession) {
+        // ===================================================================
+        // BƯỚC 1: VALIDATION - Kiểm tra luật business
+        // ===================================================================
         Auction auction = auctionManage.getAuctionById(auctionId);
         if (auction == null) {
             auction = auctionDAO.findById(auctionId).orElse(null);
         }
 
         if (auction != null) {
-            // LUẬT: Nếu đang là người dẫn đầu, tuyệt đối không được phép bỏ cuộc/ẩn danh sách!
-            if (bidder.getId().equals(auction.getHighestBidderId()) && auction.getStatus() == AuctionStatus.RUNNING) {
-                throw new AuctionException(AuctionErrorCode.CANNOT_UNWATCH_LEADING_AUCTION);
+            // LUẬT: Nếu đang là người dẫn đầu trên phiên RUNNING -> Cấm rời đi!
+            boolean isLeadingBidder = bidder.getId().equals(auction.getHighestBidderId());
+            boolean isAuctionRunning = auction.getStatus() == AuctionStatus.RUNNING;
+
+            if (isLeadingBidder && isAuctionRunning) {
+                throw new AuctionException(
+                        AuctionErrorCode.CANNOT_UNWATCH_LEADING_AUCTION,
+                        "Bạn không thể hủy theo dõi vì bạn là người dẫn đầu trên phiên này"
+                );
             }
         }
 
-        // Thực hiện xóa khỏi DB và RAM giám sát của User
+        // ===================================================================
+        // BƯỚC 2: REMOVE BUSINESS STATE (DB/RAM)
+        // ===================================================================
         userDAO.removeJoinedAuction(bidder.getId(), auctionId);
+
+        // Thread-safe: Xóa khỏi RAM của Bidder
         synchronized (bidder.getId().intern()) {
             bidder.removeJoinedAuction(auctionId);
         }
-        System.out.println("✅ Bidder " + bidder.getUsername() + " đã ngừng theo dõi phiên " + auctionId);
+        System.out.println("[AuctionService] ✅ Bidder " + bidder.getUsername() + " đã hủy tracking phiên " + auctionId);
+
+        // ===================================================================
+        // BƯỚC 3: DISCONNECT LIVE ROOM (🔥 ĐÃ SỬA: DỌN SẠCH SOCKET PHÒNG LIVE CHỐNG RÒ RỈ)
+        // ===================================================================
+        if (clientSession != null) {
+            LiveRoomManage.getInstance().leaveRoom(auctionId, clientSession);
+            System.out.println("[AuctionService] ℹ️ Đã tháo Socket Session ra khỏi phòng Live của phiên " + auctionId);
+        }
+
+        // ===================================================================
+        // BƯỚC 4: PUBLISH EVENT
+        // ===================================================================
+        int viewerCount = LiveRoomManage.getInstance().getRoomSize(auctionId);
+
+        Map<String, Object> unsubscribePayload = new HashMap<>();
+        unsubscribePayload.put("username", bidder.getUsername());
+        unsubscribePayload.put("message", "Bidder " + bidder.getUsername() + " đã hủy theo dõi phiên.");
+        unsubscribePayload.put("viewerCount", viewerCount);
+
+        AuctionEvent unsubscribeEvent = new AuctionEvent(
+                auctionId,
+                AuctionEventType.AUCTION_UNSUBSCRIBED,
+                unsubscribePayload
+        );
+        AuctionEventBus.getInstance().publish(unsubscribeEvent);
+        System.out.println("[AuctionService] 📢 Publish AUCTION_UNSUBSCRIBED event");
     }
 }
 

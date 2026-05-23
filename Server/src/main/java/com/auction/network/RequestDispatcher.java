@@ -94,12 +94,27 @@ public class RequestDispatcher {
                         handlePlaceBid(socketRequest, session);
                         break;
 
-                    case SUBSCRIBE_AUCTION:
-                        handleSubscribeAuction(socketRequest, session);
+                    // ================================================================
+                    // 🔥 ĐỒNG BỘ 4 HÀM MẠNG MỚI ĐÍCH DANH 1:1 THEO KIẾN TRÚC MỚI
+                    // ================================================================
+                    case LIVE_ENTERED:
+                        // Người dùng mở màn hình chi tiết, cắm socket xem live
+                        handleLiveEntered(socketRequest, session);
                         break;
 
-                    case UNSUBSCRIBE_AUCTION:
-                        handleUnsubscribeAuction(socketRequest, session);
+                    case LIVE_EXITED:
+                        // Người dùng đóng màn hình chi tiết, tháo socket live
+                        handleLiveExited(socketRequest, session);
+                        break;
+
+                    case AUCTION_SUBSCRIBED:
+                        // Người dùng ấn nút "Theo dõi" nền lưu trữ DB/RAM vĩnh viễn
+                        handleAuctionSubscribed(socketRequest, session);
+                        break;
+
+                    case AUCTION_UNSUBSCRIBED:
+                        // Người dùng ấn nút "Hủy theo dõi" giải phóng DB/RAM
+                        handleAuctionUnsubscribed(socketRequest, session);
                         break;
 
                     case CANCEL_AUCTION:
@@ -117,8 +132,7 @@ public class RequestDispatcher {
                 sendFailure(session, socketRequest, "JSON request không hợp lệ.", "INVALID_JSON");
 
             } catch (BaseException e) {
-                // 🔥 HỨNG TẬP TRUNG TOÀN HỆ THỐNG LỖI NGHIỆP VỤ: (Auth, Authorization, Auction, Wallet, Validation)
-                // Tự động giải mã chuỗi mã lỗi (Error Code) dạng Enum String bay qua Socket.
+                // 🔥 HỨNG TẬP TRUNG TOÀN HỆ THỐNG LỖI NGHIỆP VỤ
                 System.err.println("[Central Guard] 🚨 Lỗi nghiệp vụ xảy ra lúc [" + e.getTimestamp()
                         + "] | Code: " + e.getErrorCode() + " | Chi tiết: " + e.getMessage());
                 sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
@@ -136,12 +150,6 @@ public class RequestDispatcher {
 
     /**
      * Xử lý LOGIN.
-     * Thành công:
-     * - Gắn userId, role vào ClientSession.
-     * - Đăng ký connection vào ConnectionManage.
-     * - Trả SocketResponse.body = LoginResultDTO.
-     * Thất bại:
-     * - Trả SocketResponse.failure.
      */
     private void handleLogin(SocketRequest socketRequest, ClientSession session) {
         LoginRequest loginRequest = gson.fromJson(socketRequest.getBody(), LoginRequest.class);
@@ -159,10 +167,6 @@ public class RequestDispatcher {
 
     /**
      * Xử lý REGISTER.
-     * Thành công:
-     * - Trả SocketResponse.body = UserDTO.
-     * Thất bại:
-     * - Trả SocketResponse.failure.
      */
     private void handleRegister(SocketRequest socketRequest, ClientSession session) {
         RegisterRequest registerRequest = gson.fromJson(socketRequest.getBody(), RegisterRequest.class);
@@ -174,8 +178,6 @@ public class RequestDispatcher {
 
     /**
      * Xử lý LOGOUT.
-     * Server ưu tiên lấy userId từ ClientSession.
-     * Không tin userId client gửi lên, vì client có thể giả mạo.
      */
     private void handleLogout(SocketRequest socketRequest, ClientSession session) {
         String userId = session.getUserId();
@@ -188,11 +190,7 @@ public class RequestDispatcher {
         }
 
         authController.logout(userId);
-
-        // 1. Bắn tin báo thành công cho client trước khi ngắt kết nối vật lý
         sendSuccess(session, socketRequest, "Đăng xuất thành công.", null);
-
-        // 2. Gọi hàm đóng an toàn để thực hiện tháo gỡ ConnectionManage, LiveRoomManage và đóng Socket
         session.close();
     }
 
@@ -214,7 +212,6 @@ public class RequestDispatcher {
 
     /**
      * Tạo phiên đấu giá mới.
-     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller.
      */
     private void handleCreateAuction(SocketRequest socketRequest, ClientSession session) {
         auctionController.createAuction(socketRequest.getBody(), session);
@@ -223,7 +220,6 @@ public class RequestDispatcher {
 
     /**
      * Đặt giá vào một phiên đấu giá.
-     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller.
      */
     private void handlePlaceBid(SocketRequest socketRequest, ClientSession session) {
         auctionController.placeBid(socketRequest.getBody(), session);
@@ -231,25 +227,40 @@ public class RequestDispatcher {
     }
 
     /**
-     * Đăng ký nhận realtime update của một phiên đấu giá.
+     * 🔥 REFACTOR MỚI: Tiếp nhận yêu cầu cắm Socket mở màn hình trực tuyến (LIVE_ENTERED).
+     * Trả về dữ liệu DTO thô của phòng để Client kịp vẽ UI ngay lập tức.
      */
-    private void handleSubscribeAuction(SocketRequest socketRequest, ClientSession session) {
-        Object result = auctionController.subscribeAuction(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Đăng ký theo dõi phiên đấu giá thành công.", result);
+    private void handleLiveEntered(SocketRequest socketRequest, ClientSession session) {
+        Object result = auctionController.joinLiveRoom(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Kết nối phòng trực tuyến thành công.", result);
     }
 
     /**
-     * Hủy đăng ký nhận realtime update của một phiên đấu giá.
-     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller (Nghiệp vụ Unwatch).
+     * 🔥 REFACTOR MỚI: Tiếp nhận yêu cầu rút Socket khi đóng màn hình trực tuyến (LIVE_EXITED).
      */
-    private void handleUnsubscribeAuction(SocketRequest socketRequest, ClientSession session) {
-        auctionController.unsubscribeAuction(socketRequest.getBody(), session);
+    private void handleLiveExited(SocketRequest socketRequest, ClientSession session) {
+        auctionController.leaveLiveRoom(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Thoát phòng trực tuyến thành công.", null);
+    }
+
+    /**
+     * 🔥 REFACTOR MỚI: Tiếp nhận nút bấm "Theo dõi" nền lưu DB/RAM vĩnh viễn (AUCTION_SUBSCRIBED).
+     */
+    private void handleAuctionSubscribed(SocketRequest socketRequest, ClientSession session) {
+        auctionController.joinAuction(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Đăng ký theo dõi phiên đấu giá thành công.", null);
+    }
+
+    /**
+     * 🔥 REFACTOR MỚI: Tiếp nhận nút bấm "Hủy theo dõi" dọn rác DB/RAM + Socket (AUCTION_UNSUBSCRIBED).
+     */
+    private void handleAuctionUnsubscribed(SocketRequest socketRequest, ClientSession session) {
+        auctionController.leaveAuction(socketRequest.getBody(), session);
         sendSuccess(session, socketRequest, "Hủy theo dõi phiên đấu giá thành công.", null);
     }
 
     /**
      * Hủy một phiên đấu giá.
-     * 🔥 THAY ĐỔI: Đồng bộ theo kiểu hàm void của Controller.
      */
     private void handleCancelAuction(SocketRequest socketRequest, ClientSession session) {
         auctionController.cancelAuction(socketRequest.getBody(), session);
@@ -278,7 +289,6 @@ public class RequestDispatcher {
                              String message, String errorCode) {
         ActionType actionType = parseAction(action);
 
-        // Chống NullPointerException nếu Client cố tình gửi Action rác
         if (actionType == null) {
             actionType = ActionType.LOGIN;
         }
@@ -293,10 +303,6 @@ public class RequestDispatcher {
         session.sendMessage(gson.toJson(response));
     }
 
-    /**
-     * Chuyển action string trong SocketRequest sang ActionType.
-     * Nếu Client gửi action không nằm trong enum, trả null để dispatcher báo lỗi rõ ràng.
-     */
     private ActionType parseAction(String action) {
         if (action == null) return null;
         try {
@@ -306,9 +312,6 @@ public class RequestDispatcher {
         }
     }
 
-    /**
-     * Không dùng String.isBlank() để tránh lỗi nếu IDE compile nhầm language level thấp.
-     */
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
     }

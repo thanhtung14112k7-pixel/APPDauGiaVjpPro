@@ -36,10 +36,35 @@ public enum AuctionEventType {
     STATUS_CHANGED,
 
     /**
-     * Sự kiện: Số lượng người xem phòng thay đổi
-     * Payload: Map{auctionId, viewerCount}
-     * Khi: joinRoom(), leaveRoom() trong LiveRoomManage
+     * Sự kiện: Người dùng đăng ký theo dõi phiên (Business State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: joinAuction() trong AuctionService
+     * Mục đích: Ghi nhận tính toàn vẹn dữ liệu trong DB/RAM
      */
-    VIEWER_COUNT_CHANGED
+    AUCTION_SUBSCRIBED,
+
+    /**
+     * Sự kiện: Người dùng hủy đăng ký theo dõi phiên (Business State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: leaveAuction() trong AuctionService
+     * Mục đích: Xóa kiểm toàn từ DB/RAM + Notify clients
+     */
+    AUCTION_UNSUBSCRIBED,
+
+    /**
+     * Sự kiện: Người dùng mở tab chi tiết để xem real-time (UI/Network State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: joinLiveRoom() trong AuctionService
+     * Mục đích: Thêm ClientSession vào phòng + Broacast viewer count tăng
+     */
+    LIVE_ENTERED,
+
+    /**
+     * Sự kiện: Người dùng đóng tab chi tiết nhưng vẫn tracking (UI/Network State)
+     * Payload: Map{username, message, viewerCount}
+     * Khi: leaveLiveRoom() trong AuctionService
+     * Mục đích: Xóa ClientSession khỏi phòng + Broadcast viewer count giảm
+     */
+    LIVE_EXITED
 }
 

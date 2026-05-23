@@ -2,6 +2,9 @@ package com.auction.service;
 
 import com.auction.enums.AuctionStatus;
 import com.auction.enums.UserRole;
+import com.auction.exception.AuctionException;
+import com.auction.exception.AuctionErrorCode;
+import com.auction.manage.AuctionManage;
 import com.auction.models.Auction.Auction;
 import com.auction.models.User.Bidder;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,16 +42,26 @@ public class AuctionServiceTest {
                 AuctionStatus.RUNNING
         );
 
-        auctionService.getManager().addAuction(fakeAuction);
+        // 🔥 ĐỒNG BỘ MỚI: Vì AuctionManage là Singleton điều phối RAM, ta đẩy trực tiếp
+        // thực thể fake vào kho chứa thông qua getInstance() thay vì gọi qua getManager() cũ.
+        AuctionManage.getInstance().addAuction(fakeAuction);
     }
 
     @Test
     @DisplayName("Test tao phien dau gia co ban")
     void testCreateAuction() {
         try {
-            auctionService.createAuction("item_001", "seller_999", 100.0, 10.0, LocalDateTime.now(), LocalDateTime.now().plusHours(2));
+            // 🔥 ĐỒNG BỘ MỚI: Sửa từ 6 tham số thành 5 tham số ứng với signature của Service mới:
+            // (itemId, sellerId, stepPrice, startTime, endTime) -> Loại bỏ tham số giá thô cũ.
+            auctionService.createAuction(
+                    "item_001",
+                    "seller_999",
+                    10.0,
+                    LocalDateTime.now(),
+                    LocalDateTime.now().plusHours(2)
+            );
         } catch (Throwable e) {
-            // Nang cap len Throwable de bat moi loi Error do sap Database
+            // Nâng cấp lên Throwable để bắt mọi lỗi Error do sập Database khi chạy Test thiếu kết nối thô
         }
     }
 
@@ -56,9 +69,11 @@ public class AuctionServiceTest {
     @DisplayName("Test chuc nang huy phien dau gia khan cap")
     void testCancelAuction() {
         try {
-            auctionService.cancelAuction("auction_test_999", "Phat hien gian lan");
+            // 🔥 ĐỒNG BỘ MỚI: Sửa từ 2 tham số thành 3 tham số ứng với signature của Service mới:
+            // (auctionId, adminId, reason) -> Thêm thông tin Admin thực hiện hành động để ghi log.
+            auctionService.cancelAuction("auction_test_999", "admin_001", "Phat hien gian lan");
         } catch (Throwable e) {
-            // Bat loi DB
+            // Bắt lỗi kết nối cơ sở dữ liệu vật lý
         }
         assertEquals(AuctionStatus.CANCELED, fakeAuction.getStatus());
     }
@@ -69,15 +84,21 @@ public class AuctionServiceTest {
         try {
             auctionService.finalizeAuction("auction_test_999");
         } catch (Throwable e) {
-            // Nang cap len Throwable de bat moi loi Error do sap Database
+            // Nâng cấp lên Throwable để bắt mọi lỗi Error do sập Database
         }
     }
 
     @Test
     @DisplayName("Test tu choi dat gia khi nguoi dung chua ket noi mang")
     void testProcessBid_FailOfflineUser() {
-        boolean result = auctionService.processBid(testBidder, "auction_test_999", 150.0);
-        assertFalse(result);
+        // 🔥 ĐỒNG BỘ MỚI: Hàm `processBid` hiện tại trả về `void` và ném ra Exception (`BIDDER_NOT_ONLINE`)
+        // thay vì trả về `boolean` như thiết kế cũ. Ta sử dụng assertThrows của JUnit 5 để bắt lỗi chuẩn xác.
+        AuctionException exception = assertThrows(AuctionException.class, () -> {
+            auctionService.processBid(testBidder, "auction_test_999", 150.0);
+        });
+
+        // Kiểm tra xem mã lỗi ném ra có đúng là do User đang ngoại tuyến (Offline) hay không
+        assertEquals(AuctionErrorCode.BIDDER_NOT_ONLINE, exception.getErrorCode());
     }
 
     @Test
