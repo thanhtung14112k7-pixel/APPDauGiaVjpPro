@@ -212,8 +212,9 @@
 }
 
 .status-message-label {
-    -fx-text-fill: #666666;
+    -fx-text-fill: #333333;        /* Đổi sang xám thẫm hơn để tăng độ tương phản trên nền trắng */
     -fx-font-size: 12px;
+    -fx-font-weight: bold;         /* Làm chữ đậm nhẹ để hiển thị thông báo sắc nét hơn */
 }
 
 /* Kiểu dáng TableView chế độ sáng */
@@ -245,21 +246,47 @@
     -fx-border-color: transparent transparent #ededed transparent;
 }
 
-.auction-table .table-row-cell:filled:hover {
-    -fx-background-color: #f9f9f9;
+/* Tạo sọc xen kẽ hàng chẵn/lẻ giúp bảng sáng sủa, dễ theo dõi */
+.auction-table .table-row-cell:odd {
+    -fx-background-color: #fdfdfd; /* Hàng lẻ trắng xám nhẹ */
+}
+.auction-table .table-row-cell:even {
+    -fx-background-color: #ffffff; /* Hàng chẵn trắng tinh */
 }
 
+/* Thêm đường phân tách dọc giữa các cột cho rành mạch */
+.auction-table .table-column {
+    -fx-border-color: transparent #ededed transparent transparent;
+}
+
+.auction-table .table-row-cell:filled:hover {
+    -fx-background-color: #f1f5f9; /* Đổi màu mượt hơn khi di chuột qua */
+}
+
+/* [NÂNG CẤP ĐỘC QUYỀN]: Khi dòng được chọn, ép toàn bộ chữ thành màu TRẮNG TINH để nổi rõ trên nền xanh dương */
 .auction-table .table-row-cell:filled:selected {
     -fx-background-color: #007bff;
 }
-.auction-table .table-row-cell:filled:selected .label {
-    -fx-text-fill: #ffffff;
+.auction-table .table-row-cell:filled:selected .table-cell {
+    -fx-text-fill: #ffffff !important; /* Triệt tiêu triệt để màu xám mờ cũ */
+    -fx-font-weight: bold;            /* Đẩy chữ lên đậm nét dễ nhìn */
 }
 
 .auction-table .table-cell {
     -fx-text-fill: #333333;
     -fx-alignment: center-left;
     -fx-padding: 10;
+}
+
+/* [BỔ SUNG]: Định nghĩa hệ màu trạng thái mang sắc thái chuyên nghiệp, đậm nét trên nền Light */
+.auction-table .table-cell.status-running {
+    -fx-text-fill: #16a34a; /* Màu xanh lá sẫm thương mại điện tử */
+}
+.auction-table .table-cell.status-open {
+    -fx-text-fill: #2563eb; /* Màu xanh dương hoàng gia lịch lãm */
+}
+.auction-table .table-cell.status-finished {
+    -fx-text-fill: #dc2626; /* Màu đỏ đô quý phái kết thúc */
 }
 
 /* Hệ thống nút bấm phụ trợ chế độ sáng */
@@ -269,5 +296,17 @@
 .btn-secondary { -fx-background-color: #e0e0e0; -fx-text-fill: #333333; -fx-background-radius: 6; -fx-cursor: hand; }
 .btn-secondary:hover { -fx-background-color: #d0d0d0; }
 
-.btn-danger { -fx-background-color: transparent; -fx-border-color: #dc3545; -fx-text-fill: #dc3545; -fx-background-radius: 6; -fx-cursor: hand; }
-.btn-danger:hover { -fx-background-color: #dc3545; -fx-text-fill: white; }
+.btn-danger {
+    -fx-background-color: transparent;
+    -fx-border-color: #dc3545;
+    -fx-text-fill: #dc3545;
+    -fx-background-radius: 20px;   /* Bo tròn mềm mại giống nút Danger bên Dark Mode */
+    -fx-border-radius: 20px;       /* Cấu hình đồng bộ viền khung */
+    -fx-padding: 6px 16px;         /* Khoảng đệm cho nút cân đối */
+    -fx-cursor: hand;
+}
+.btn-danger:hover {
+    -fx-background-color: #dc3545;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(three-pass-box, rgba(220,53,69,0.3), 8, 0, 0, 0); /* Đổ bóng nhạt mượt mà khi hover */
+}
