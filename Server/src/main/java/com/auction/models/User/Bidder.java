@@ -2,7 +2,6 @@ package com.auction.models.User;
 
 import com.auction.enums.UserRole;
 import com.auction.enums.UserStatus;
-import com.auction.observer.Subscriber;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

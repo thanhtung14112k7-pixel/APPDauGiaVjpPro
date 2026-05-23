@@ -36,8 +36,8 @@ public class AuthorizationService {
             ActionType.LOGOUT.name(),
             ActionType.GET_ACTIVE_AUCTIONS.name(),
             ActionType.GET_AUCTION_DETAIL.name(),
-            ActionType.SUBSCRIBE_AUCTION.name(),
-            ActionType.UNSUBSCRIBE_AUCTION.name()
+            ActionType.AUCTION_SUBSCRIBED.name(),
+            ActionType.AUCTION_UNSUBSCRIBED.name()
     );
 
     /**
