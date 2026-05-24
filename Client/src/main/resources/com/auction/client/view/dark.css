@@ -316,3 +316,79 @@
     -fx-text-fill: white;
     -fx-effect: dropshadow(three-pass-box, rgba(255,77,77,0.4), 8, 0, 0, 0); /* Đổ bóng phát sáng đỏ nhẹ */
 }
+
+.btn-back-solid {
+    -fx-background-color: #ff9f43; /* Đổi sang màu cam rực để nổi bần bật trên nền tối */
+    -fx-text-fill: #111111;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+    -fx-background-radius: 6;
+    -fx-padding: 6 15 6 15;
+}
+.btn-back-solid:hover {
+    -fx-background-color: #e08732;
+}
+
+/* --- HỆ THỐNG CLASS DÀNH RIÊNG CHO MÀN SIM - DARK MODE --- */
+
+/* Nền tổng thể ngoài cùng: Màu xám siêu tối huyền bí */
+.sim-root-container {
+    -fx-background-color: #18191a;
+}
+
+/* Khung Card chính ở giữa: Màu mịn màng, đồng điệu tuyệt đối với Login */
+.sim-card-main {
+    -fx-background-color: #242526;
+    -fx-background-radius: 15;
+    -fx-padding: 30;
+    -fx-border-color: transparent; /* Bỏ viền cứng gây gắt mắt */
+    -fx-effect: dropshadow(three-pass-box, rgba(0, 0, 0, 0.2), 10, 0, 0, 0);
+}
+
+/* Ô nhập liệu (TextField): Màu xám tối vừa phải, mịn màng dịu mắt */
+.sim-input-field {
+    -fx-background-color: #3a3b3c;
+    -fx-border-color: transparent;
+    -fx-background-radius: 8;
+    -fx-text-fill: #ffffff;
+    -fx-prompt-text-fill: #b0b3b8;
+}
+.sim-input-field:focused {
+    -fx-border-color: #ff9f43;
+    -fx-border-radius: 8;
+}
+
+/* Label tiêu đề nhỏ: Màu xám bạc tinh tế, không bị chìm mà nhìn rất sang */
+.sim-label-title {
+    -fx-text-fill: #e4e6eb;
+    -fx-font-weight: bold;
+}
+
+/* Tiêu đề phụ của form: Chữ phát sáng mờ nhẹ giống màn hình Login */
+.sim-form-header {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #ffffff; /* Chữ trắng tinh bừng sáng */
+    /* Hiệu ứng đổ bóng mờ nhẹ màu cam xung quanh chữ tạo độ sâu */
+    -fx-effect: dropshadow(three-pass-box, rgba(255, 159, 67, 0.3), 8, 0, 0, 0);
+}
+
+/* Nút phụ ở chế độ Tối: Nền tệp với card, viền mảnh xám tối, chữ bạc đồng bộ với label */
+.sim-btn-secondary {
+    -fx-background-color: transparent;
+    -fx-border-color: #4e4f50; /* Viền tối mờ dịu mắt */
+    -fx-border-width: 1;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-text-fill: #e4e6eb; /* Đồng bộ hoàn toàn với màu chữ sim-label-title của Dark Mode */
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+    -fx-padding: 5 12 5 12;
+}
+
+/* Hiệu ứng di chuột: Nền sáng nhẹ lên, chữ và viền hửng sắc cam ngầm */
+.sim-btn-secondary:hover {
+    -fx-background-color: #3a3b3c;
+    -fx-border-color: #ff9f43; /* Viền cam rực nhẹ lên tạo điểm nhấn thế giới ngầm */
+    -fx-text-fill: #ff9f43;
+}

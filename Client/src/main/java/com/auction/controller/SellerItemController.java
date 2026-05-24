@@ -6,11 +6,14 @@ import com.auction.network.ClientAuctionApi;
 import com.auction.util.SceneNavigator;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.StackPane;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.Objects;
 
 /**
  * SellerItemController là Controller phía Client cho màn hình Seller tạo phiên đấu giá.
@@ -94,6 +97,18 @@ public class SellerItemController {
     @FXML
     private Label messageLabel;
 
+    @FXML
+    private StackPane rootContainer;
+
+    @FXML
+    private Label dynamicTitleLabel;
+
+    @FXML
+    private Label formTitleLabel;
+
+    @FXML
+    private Button btnSubmit;
+
     /**
      * initialize() được JavaFX tự động gọi sau khi load FXML.
      *
@@ -103,6 +118,46 @@ public class SellerItemController {
      */
     @FXML
     public void initialize() {
+        // --- ĐOẠN CODE TỰ ĐỘNG ÁP DỤNG THEME KHI VỪA MỞ MÀN HÌNH SIM ---
+        rootContainer.getStylesheets().clear();
+        String currentPath = SceneNavigator.isAppDarkMode
+                ? "/com/auction/client/view/dark.css"
+                : "/com/auction/client/view/light.css";
+        try {
+            String css = Objects.requireNonNull(getClass().getResource(currentPath)).toExternalForm();
+            rootContainer.getStylesheets().add(css);
+        } catch (Exception e) {
+            System.out.println("Không thể nạp theme hệ thống: " + currentPath);
+        }
+        // -------------------------------------------------------
+
+        if (SceneNavigator.isAppDarkMode) {
+            // 1. Giao diện tối - Kích hoạt các yếu tố ấn tượng ngầm
+            if (dynamicTitleLabel != null) {
+                dynamicTitleLabel.setText("TIẾN HÀNH GIAO DỊCH NGẦM");
+                dynamicTitleLabel.setStyle("-fx-text-fill: #ff9f43;"); // Màu vàng cam rực của Dark Mode
+            }
+            if (formTitleLabel != null) {
+                formTitleLabel.setText("Thông Tin Giao Dịch Bí Mật");
+            }
+            if (btnSubmit != null) {
+                btnSubmit.setText("KÍCH HOẠT GIAO DỊCH NGẦM 🏴‍☠️");
+            }
+        } else {
+            // 2. Giao diện sáng - Quay về chuẩn mực đấu giá thông thường
+            if (dynamicTitleLabel != null) {
+                dynamicTitleLabel.setText("ĐĂNG KÝ PHIÊN ĐẤU GIÁ");
+                dynamicTitleLabel.setStyle("-fx-text-fill: #1877f2;"); // Màu xanh dương của Light Mode
+            }
+            if (formTitleLabel != null) {
+                formTitleLabel.setText("Thông Tin Phiên Đấu Giá");
+            }
+            if (btnSubmit != null) {
+                btnSubmit.setText("XÁC NHẬN TẠO PHIÊN ĐẤU GIÁ 🚀");
+            }
+        }
+        // =====================================================================
+
         fillDefaultTimeIfEmpty();
         showMessage("Nhập thông tin để tạo phiên đấu giá.");
     }
