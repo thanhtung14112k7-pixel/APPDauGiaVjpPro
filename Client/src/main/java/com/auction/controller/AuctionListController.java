@@ -333,17 +333,6 @@ public class AuctionListController {
          */
         auctionItems.setAll(auctions);
 
-        // =========================================================================
-        // ĐOẠN CHÈN ĐỂ TEST: Bơm dữ liệu giả vào bảng
-        // =========================================================================
-        if (auctionItems.isEmpty()) {
-            // Chuyển 1L, 2L, 3L thành "1", "2", "3" để khớp với kiểu String của Constructor DTO
-            auctionItems.add(new AuctionSummaryDTO("1", "Siêu xe Lamborghini Aventador SVJ", 25000000.0, "RUNNING", java.time.LocalDateTime.now().plusHours(5)));
-            auctionItems.add(new AuctionSummaryDTO("2", "Đồng hồ Rolex Submariner Gold 18K", 45000.0, "OPEN", java.time.LocalDateTime.now().plusDays(2)));
-            auctionItems.add(new AuctionSummaryDTO("3", "Bức tranh quý của danh họa VjpPro", 1200.0, "FINISHED", java.time.LocalDateTime.now().minusMinutes(30)));
-        }
-        // =========================================================================
-
         if (auctionItems.isEmpty()) {
             showMessage("Hiện chưa có phiên đấu giá nào đang hoạt động.");
         } else {
