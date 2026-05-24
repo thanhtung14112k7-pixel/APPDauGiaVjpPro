@@ -11,6 +11,7 @@
 <?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
+<?import javafx.scene.Cursor?>
 <?import javafx.scene.shape.Circle?>
 <?import javafx.scene.text.Font?>
 <?import org.controlsfx.control.textfield.CustomTextField?>
@@ -73,25 +74,53 @@
                      </VBox.margin>
                   </Label>
 
-                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="👤  Account" />
+                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="👤  Account">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
                   <Region maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="auctionListButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAuctionList" styleClass="button-menu" text="🔨  Auction list" />
+                  <Button fx:id="auctionListButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAuctionList" styleClass="button-menu" text="🔨  Auction list">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
                   <Region fx:id="auctionListSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="myBidsButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleMyBids" styleClass="button-menu" text="📊  My bids" />
+                  <Button fx:id="myBidsButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleMyBids" styleClass="button-menu" text="📊  My bids">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
                   <Region fx:id="myBidsSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="sellerManagementButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleSellerManagement" styleClass="button-menu" text="📦  Seller management" />
+                  <Button fx:id="sellerManagementButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleSellerManagement" styleClass="button-menu" text="📦  Seller management">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
                   <Region fx:id="sellerManagementSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="adminPanelButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAdminPanel" styleClass="button-menu" text="🔑  Admin Panel" />
+                  <Button fx:id="adminPanelButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAdminPanel" styleClass="button-menu" text="🔑  Admin Panel">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
                   <Region fx:id="adminPanelSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="walletButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleWallet" styleClass="button-menu" text="💳  Wallet &amp; History" />
+                  <Button fx:id="walletButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleWallet" styleClass="button-menu" text="💳  Wallet &amp; History">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
                   <Region maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="🛠  Settings" />
+                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="🛠  Settings">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
 
                   <Region minHeight="20.0" prefHeight="40.0" VBox.vgrow="ALWAYS" />
 
@@ -109,11 +138,18 @@
                      </VBox.margin>
                   </VBox>
 
-                  <Button fx:id="logoutButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleLogout" styleClass="button-logout" text="Logout" />
+                  <Button fx:id="logoutButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleLogout" styleClass="button-logout" text="Logout">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
+                  </Button>
 
-                  <Button fx:id="exitButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleExit" styleClass="button-exit" style="-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-weight: bold;" text="🚪  Exit App">
+                  <Button fx:id="exitButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleExit" styleClass="button-exit" text="🚪  Exit App">
+                     <cursor>
+                        <Cursor fx:constant="HAND" />
+                     </cursor>
                      <VBox.margin>
-                        <Insets top="2.0" />
+                        <Insets top="10.0" />
                      </VBox.margin>
                   </Button>
 

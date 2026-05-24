@@ -410,3 +410,28 @@
     -fx-font-size: 16px;
     -fx-font-weight: bold;
 }
+
+/* --- ĐỒNG BỘ KIỂU DÁNG NÚT EXIT GIỐNG LOGOUT (Bo tròn viên sỏi, mỏng nhẹ) --- */
+.button-exit {
+    -fx-background-color: #d32f2f;      /* Màu đỏ chủ đạo */
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+
+    /* Đồng bộ độ bo góc tròn cong viên sỏi mềm mại như nút Logout */
+    -fx-background-radius: 20px;
+    -fx-border-radius: 20px;
+
+    /* Giảm padding để nút thanh thoát, ôm sát chữ và không bị béo */
+    -fx-padding: 6px 15px;
+    -fx-alignment: center;
+}
+
+/* --- HIỆU ỨNG HOVER PHÁT QUẦNG SÁNG RỰC RỠ (HIGH VISIBILITY) --- */
+.button-exit:hover {
+    -fx-background-color: #e53935;     /* Màu đỏ tươi bừng sáng nền */
+    -fx-text-fill: #ffffff;             /* Chữ trắng tương phản mạnh */
+
+    /* Tạo hiệu ứng quầng sáng lan tỏa màu vàng/cam ấm (Glow Effect) bao quanh nút cực kỳ bắt mắt */
+    -fx-effect: dropshadow(three-pass-box, rgba(255, 179, 0, 0.8), 15, 0.3, 0, 0);
+}
