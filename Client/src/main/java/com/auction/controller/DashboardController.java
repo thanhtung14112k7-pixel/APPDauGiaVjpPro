@@ -13,11 +13,11 @@ import com.auction.network.ClientAuthApi;
 import com.auction.enums.UserRole;
 import javafx.scene.image.Image;
 import javafx.scene.layout.Pane; // Import thêm Pane để quản lý theme
+import javafx.scene.layout.Region; // Import thêm Region để quản lý lò xo động
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.paint.ImagePattern;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Alert;
 import java.io.IOException;
 import java.util.Objects;
 
@@ -49,6 +49,32 @@ public class DashboardController {
 
     @FXML
     private Button logoutButton;
+
+    @FXML
+    private Button myBidsButton;
+
+    @FXML
+    private Button walletButton;
+
+    // --- CÁC ĐỐI TƯỢNG LÒ XO ĐỆM ĐƯỢC QUẢN LÝ ẨN/HIỆN ĐỒNG BỘ THEO ROLE ---
+    @FXML
+    private Region auctionListSpacer;
+
+    @FXML
+    private Region myBidsSpacer;
+
+    @FXML
+    private Region sellerManagementSpacer;
+
+    @FXML
+    private Region adminPanelSpacer;
+
+    // --- COMPONENT THẺ VÍ MINI MỚI ĐỂ LẤP ĐẦY KHOẢNG TRỐNG THÔNG MINH ---
+    @FXML
+    private VBox walletMiniCard;
+
+    @FXML
+    private Label miniBalanceLabel;
 
     @FXML
     public void initialize() {
@@ -85,7 +111,7 @@ public class DashboardController {
         roleLabel.setText("Role: " + role);
         welcomeLabel.setText("Hello " + username);
 
-        // --- ĐÃ FIX LỖI NULL POINTER EXCEPTION AN TOÀN ---
+        // --- ĐÃ FIX LỖI NULL POINTER EXCEPTION AN TOÀN ---
         if (avatarCircle != null) {
             try {
                 Image avatarImage = new Image(Objects.requireNonNull(getClass().getResourceAsStream(imagePath)));
@@ -97,23 +123,54 @@ public class DashboardController {
             }
         }
 
+        // --- CẬP NHẬT HIỂN THỊ SỐ DƯ MẪU CHO CARD VÍ (Sau này kết nối API nạp dữ liệu thật) ---
+        if (miniBalanceLabel != null) {
+            miniBalanceLabel.setText("$1,500.00");
+        }
+
         hideAllRoleButtons();
         showButtonsByRole(role);
     }
 
     private void hideAllRoleButtons() {
-        setButtonVisible(auctionListButton, false);
-        setButtonVisible(sellerManagementButton, false);
-        setButtonVisible(adminPanelButton, false);
+        // Ẩn đồng bộ cả Nút lẫn khối lò xo đi kèm để tránh lỗi khoảng trống không đều
+        setElementVisible(auctionListButton, auctionListSpacer, false);
+        setElementVisible(myBidsButton, myBidsSpacer, false);
+        setElementVisible(sellerManagementButton, sellerManagementSpacer, false);
+        setElementVisible(adminPanelButton, adminPanelSpacer, false);
+
+        // Nút Wallet không cần spacer riêng vì nó nằm cố định cạnh Settings
+        setButtonVisible(walletButton, false);
+
+        // Mặc định ẩn thẻ ví mini
+        setCardVisible(walletMiniCard, false);
     }
 
     private void showButtonsByRole(UserRole role) {
         if (role == UserRole.BIDDER) {
-            setButtonVisible(auctionListButton, true);
+            setElementVisible(auctionListButton, auctionListSpacer, true);
+            setElementVisible(myBidsButton, myBidsSpacer, true);
+            setButtonVisible(walletButton, true);
+            setCardVisible(walletMiniCard, true); // Hiện thẻ ví cho khách đấu giá nhìn số dư công khai
         } else if (role == UserRole.SELLER) {
-            setButtonVisible(sellerManagementButton, true);
+            setElementVisible(sellerManagementButton, sellerManagementSpacer, true);
+            setButtonVisible(walletButton, true);
+            setCardVisible(walletMiniCard, true); // Hiện thẻ ví cho người bán theo dõi doanh thu phiên
         } else if (role == UserRole.ADMIN) {
-            setButtonVisible(adminPanelButton, true);
+            setElementVisible(adminPanelButton, adminPanelSpacer, true);
+            setCardVisible(walletMiniCard, false); // Admin không cần thẻ ví cá nhân, ẩn đi cho gọn gàng
+        }
+    }
+
+    // --- HÀM XỬ LÝ ẨN/HIỆN CÁC THÀNH PHẦN HOÀN TOÀN KHÔNG ĐỂ LẠI KHÔNG GIAN THỪA ---
+    private void setElementVisible(Button button, Region spacer, boolean visible) {
+        if (button != null) {
+            button.setVisible(visible);
+            button.setManaged(visible);
+        }
+        if (spacer != null) {
+            spacer.setVisible(visible);
+            spacer.setManaged(visible);
         }
     }
 
@@ -121,6 +178,13 @@ public class DashboardController {
         if (button != null) {
             button.setVisible(visible);
             button.setManaged(visible);
+        }
+    }
+
+    private void setCardVisible(VBox card, boolean visible) {
+        if (card != null) {
+            card.setVisible(visible);
+            card.setManaged(visible);
         }
     }
 
@@ -179,6 +243,17 @@ public class DashboardController {
         com.auction.service.ClientSocketService.reset();
         // Quay về màn hình đăng nhập.
         SceneNavigator.showLogin();
+    }
+
+    @FXML
+    private void handleMyBids() {
+        System.out.println("Mở màn hình danh sách các phiên tôi đang đấu giá...");
+        // SceneNavigator.showMyBids(); // Ví dụ gọi chuyển màn hình
+    }
+
+    @FXML
+    private void handleWallet() {
+        System.out.println("Mở màn hình Ví & Lịch sử giao dịch...");
     }
 
     private void showInfo(String message) {

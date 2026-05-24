@@ -392,3 +392,21 @@
     -fx-border-color: #ff9f43; /* Viền cam rực nhẹ lên tạo điểm nhấn thế giới ngầm */
     -fx-text-fill: #ff9f43;
 }
+
+/* Style cho thẻ Ví ở chế độ Dark Mode */
+.wallet-mini-card {
+    -fx-background-color: rgba(255, 255, 255, 0.1); /* Nền trắng đục mờ nhẹ trên nền tối */
+    -fx-background-radius: 10px;
+    -fx-padding: 10px;
+}
+
+.wallet-mini-title {
+    -fx-text-fill: #aaaaaa; /* Chữ tiêu đề màu xám sáng nhẹ */
+    -fx-font-size: 11px;
+}
+
+.wallet-mini-balance {
+    -fx-text-fill: #81c784; /* Màu xanh lá mềm/bạc hà dịu mắt (Soft Sage Green), nổi bật vừa đủ trên nền tối */
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
