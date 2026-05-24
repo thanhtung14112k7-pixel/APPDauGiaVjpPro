@@ -73,25 +73,25 @@
                      </VBox.margin>
                   </Label>
 
-                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="Account" />
+                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="👤  Account" />
                   <Region maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="auctionListButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAuctionList" styleClass="button-menu" text="Auction list" />
+                  <Button fx:id="auctionListButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAuctionList" styleClass="button-menu" text="🔨  Auction list" />
                   <Region fx:id="auctionListSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="myBidsButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleMyBids" styleClass="button-menu" text="My bids" />
+                  <Button fx:id="myBidsButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleMyBids" styleClass="button-menu" text="📊  My bids" />
                   <Region fx:id="myBidsSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="sellerManagementButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleSellerManagement" styleClass="button-menu" text="Seller management" />
+                  <Button fx:id="sellerManagementButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleSellerManagement" styleClass="button-menu" text="📦  Seller management" />
                   <Region fx:id="sellerManagementSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="adminPanelButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAdminPanel" styleClass="button-menu" text="Admin panel" />
+                  <Button fx:id="adminPanelButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleAdminPanel" styleClass="button-menu" text="🔑  Admin Panel" />
                   <Region fx:id="adminPanelSpacer" maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button fx:id="walletButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleWallet" styleClass="button-menu" text="Wallet &amp; History" />
+                  <Button fx:id="walletButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleWallet" styleClass="button-menu" text="💳  Wallet &amp; History" />
                   <Region maxHeight="20.0" minHeight="0.0" prefHeight="10.0" VBox.vgrow="ALWAYS" />
 
-                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="Settings" />
+                  <Button maxWidth="1.7976931348623157E308" mnemonicParsing="false" styleClass="button-menu" text="🛠  Settings" />
 
                   <Region minHeight="20.0" prefHeight="40.0" VBox.vgrow="ALWAYS" />
 
