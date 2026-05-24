@@ -111,6 +111,12 @@
 
                   <Button fx:id="logoutButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleLogout" styleClass="button-logout" text="Logout" />
 
+                  <Button fx:id="exitButton" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleExit" styleClass="button-exit" style="-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-weight: bold;" text="🚪  Exit App">
+                     <VBox.margin>
+                        <Insets top="2.0" />
+                     </VBox.margin>
+                  </Button>
+
                   <VBox alignment="CENTER" prefWidth="190.0" spacing="2.0">
                      <children>
                         <Label style="-fx-text-fill: gray; -fx-font-size: 10px; -fx-opacity: 0.6;" text="Version 1.0.0 (Stable)" />

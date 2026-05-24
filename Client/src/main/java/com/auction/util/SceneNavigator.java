@@ -1,7 +1,6 @@
 package com.auction.util;
 
 import com.auction.controller.AuctionDetailController;
-import com.auction.controller.AuctionDetailController;
 import com.auction.controller.LiveBiddingController;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -46,6 +45,11 @@ public class SceneNavigator {
 
     public static void setStage(Stage stage) {
         mainStage = stage;
+    }
+
+    // --- HÀM GETTER MỚI BỔ SUNG ĐỂ COI CỬA SỔ CHÍNH TỪ CÁC CONTROLLER ---
+    public static Stage getStage() {
+        return mainStage;
     }
 
     public static void showLogin() {

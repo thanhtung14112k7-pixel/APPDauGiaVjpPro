@@ -56,6 +56,10 @@ public class DashboardController {
     @FXML
     private Button walletButton;
 
+    // --- NÚT THOÁT ỨNG DỤNG ĐỂ CHẠY HIỆU ỨNG OUTRO TIỄN KHÁCH ---
+    @FXML
+    private Button exitButton;
+
     // --- CÁC ĐỐI TƯỢNG LÒ XO ĐỆM ĐƯỢC QUẢN LÝ ẨN/HIỆN ĐỒNG BỘ THEO ROLE ---
     @FXML
     private Region auctionListSpacer;
@@ -243,6 +247,25 @@ public class DashboardController {
         com.auction.service.ClientSocketService.reset();
         // Quay về màn hình đăng nhập.
         SceneNavigator.showLogin();
+    }
+
+    // --- HÀM XỬ LÝ SỰ KIỆN KHI CLICK VÀO NÚT EXIT APP MỚI ---
+    @FXML
+    private void handleExit() {
+        /*
+         * Khi người dùng nhấn nút Exit trên thanh Dashboard:
+         * Giả lập một sự kiện WINDOW_CLOSE_REQUEST bắn thẳng vào Stage.
+         * Logic tại Main.java sẽ bắt được, chặn tắt đột ngột, quay về màn hình Intro
+         * và chạy hoạt cảnh tiễn khách Outro cực kỳ mượt mà.
+         */
+        if (SceneNavigator.getStage() != null) {
+            SceneNavigator.getStage().getOnCloseRequest().handle(
+                    new javafx.stage.WindowEvent(
+                            SceneNavigator.getStage(),
+                            javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST
+                    )
+            );
+        }
     }
 
     @FXML

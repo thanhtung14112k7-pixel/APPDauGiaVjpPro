@@ -1,7 +1,9 @@
 package com.auction;
 
+import com.auction.controller.IntroController;
 import com.auction.util.SceneNavigator;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -14,6 +16,10 @@ import javafx.stage.Stage;
  * 3. Đưa cửa sổ đó cho SceneNavigator quản lý
  */
 public class Main extends Application {
+
+    // Lưu lại controller của màn hình Intro để có thể gọi hoạt cảnh Outro từ bất cứ đâu khi bấm nút X
+    private static IntroController introControllerInstance;
+    private static Parent introRootNode;
 
     @Override
     public void start(Stage primaryStage) {
@@ -38,10 +44,37 @@ public class Main extends Application {
         primaryStage.setFullScreenExitHint("");
         // ------------------------------------------------------
 
+        // --- CẤU HÌNH BẮT SỰ KIỆN NÚT [X] ĐỂ CHẠY OUTRO TIỄN KHÁCH ---
+        // Ngăn không cho JavaFX tự tắt ứng dụng ngầm ngay khi bấm nút X
+        Platform.setImplicitExit(false);
+
+        primaryStage.setOnCloseRequest(event -> {
+            // Chặn không cho hệ điều hành sập cửa sổ ngay lập tức
+            event.consume();
+
+            if (introControllerInstance != null && introRootNode != null) {
+                // Nếu người dùng đang ở màn hình khác, ta quay xe đưa họ về lại màn hình Intro để xem hoạt cảnh kết thúc
+                if (primaryStage.getScene().getRoot() != introRootNode) {
+                    primaryStage.getScene().setRoot(introRootNode);
+                }
+                // Kích hoạt hoạt cảnh quý ông quay lưng đi lùi xa dần và tắt sảnh an toàn
+                introControllerInstance.playOutroAndExit();
+            } else {
+                // Phòng hờ nếu chưa kịp nạp Intro mà đã bấm thoát thì sập ngay lập tức an toàn
+                Platform.exit();
+                System.exit(0);
+            }
+        });
+        // ------------------------------------------------------------
+
         // 3. Thay vì trực tiếp mở Login lạnh lùng, ta nạp và hiển thị màn hình Intro lên trước
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/auction/client/view/intro.fxml"));
             Parent root = loader.load();
+
+            // Lưu lại node gốc và bộ điều khiển phục vụ cho pha tiễn khách Outro về sau
+            introRootNode = root;
+            introControllerInstance = loader.getController();
 
             // Khởi tạo khung chứa Scene cơ sở đầu tiên cho ứng dụng với kích thước chuẩn 900x600 như thiết kế
             Scene scene = new Scene(root, 900, 600);

@@ -1,47 +1,86 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.geometry.*?>
-<?import javafx.scene.control.*?>
-<?import javafx.scene.image.*?>
-<?import javafx.scene.layout.*?>
-<?import javafx.scene.text.*?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.shape.Circle?>
+<?import javafx.scene.shape.SVGPath?>
+<?import javafx.scene.text.Font?>
 
-<StackPane fx:id="introRoot" prefHeight="600.0" prefWidth="900.0" style="-fx-background-color: linear-gradient(to bottom right, #1e293b, #0f172a, #020617);" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.auction.controller.IntroController">
+<AnchorPane fx:id="introRoot" prefHeight="600.0" prefWidth="900.0" style="-fx-background-color: linear-gradient(to bottom right, #0f172a, #020617);" xmlns="http://javafx.com/javafx/26" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.auction.controller.IntroController">
     <children>
-        <VBox alignment="CENTER" spacing="30.0">
+
+        <VBox alignment="CENTER" spacing="35.0" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
             <children>
+
                 <ImageView fitHeight="150.0" fitWidth="300.0" pickOnBounds="true" preserveRatio="true">
                     <image>
-                        <Image url="@../../../../image/LOGO.png" />
+                        <Image url="@/image/LOGO.png" />
                     </image>
                 </ImageView>
 
-                <ProgressIndicator fx:id="loadingIndicator" maxHeight="50.0" maxWidth="50.0" style="-fx-progress-color: #d4af37; -fx-background-color: transparent;" />
+                <Label alignment="CENTER" style="-fx-letter-spacing: 2px;" text="🎶😎 AppDauGiaVjpPro Version 1.00 by Tung Tien Linh Son 👌✌️🤞💕❤️" textFill="#e5c158">
+                    <font>
+                        <Font name="System Bold" size="18.0" />
+                    </font>
+                </Label>
 
-                <VBox alignment="CENTER" spacing="8.0">
+                <StackPane prefHeight="120.0" prefWidth="600.0">
                     <children>
-                        <Label fx:id="statusLabel" text="Khởi động App Đấu Giá Vjp Pro" textFill="#f1f5f9">
-                            <font>
-                                <Font name="System Bold Italic" size="16.0" />
-                            </font>
-                        </Label>
-                        <Label text="Vui lòng đợi trong giây lát" textFill="#94a3b8">
-                            <font>
-                                <Font size="13.0" />
-                            </font>
-                        </Label>
+
+                        <Pane maxHeight="1.0" maxWidth="600.0" prefHeight="1.0" prefWidth="600.0" style="-fx-background-color: rgba(229, 193, 88, 0.1);" StackPane.alignment="CENTER" />
+
+                        <Pane maxWidth="600.0" prefHeight="120.0" prefWidth="600.0" StackPane.alignment="CENTER">
+                            <children>
+
+                                <Pane fx:id="leftPersonNode" layoutX="0.0" layoutY="20.0" prefHeight="75.0" prefWidth="50.0" scaleX="1.4" scaleY="1.4">
+                                    <children>
+                                        <SVGPath content="M15,20 Q28,8 38,20 L32,45 L12,45 Z" fill="#e5c158" />
+                                        <Circle centerX="28.0" centerY="13.0" fill="#e5c158" radius="6.0" />
+                                        <SVGPath content="M15,10 L38,8 L36,11 L15,11 Z M20,4 L32,3 L32,8 L20,8 Z" fill="#b89321" />
+                                        <SVGPath content="M4,35 L12,35 L12,43 L4,43 Z" fill="#b89321" />
+                                        <SVGPath fx:id="leftLegA" content="M16,45 L10,62 M28,45 L34,62" stroke="#e5c158" strokeLineCap="ROUND" strokeWidth="5.0" />
+                                        <SVGPath fx:id="leftLegB" content="M16,45 L22,60 M28,45 L18,60" stroke="#e5c158" strokeLineCap="ROUND" strokeWidth="5.0" visible="false" />
+                                    </children>
+                                </Pane>
+
+                                <Pane fx:id="rightPersonNode" layoutX="550.0" layoutY="20.0" prefHeight="75.0" prefWidth="50.0" scaleX="-1.4" scaleY="1.4">
+                                    <children>
+                                        <SVGPath content="M15,20 Q28,8 38,20 L32,45 L12,45 Z" fill="#b89321" />
+                                        <Circle centerX="28.0" centerY="13.0" fill="#b89321" radius="6.0" />
+                                        <SVGPath content="M15,10 L38,8 L36,11 L15,11 Z M20,4 L32,3 L32,8 L20,8 Z" fill="#8a6d1a" />
+                                        <SVGPath content="M4,35 L12,35 L12,43 L4,43 Z" fill="#8a6d1a" />
+                                        <SVGPath fx:id="rightLegA" content="M16,45 L10,62 M28,45 L34,62" stroke="#b89321" strokeLineCap="ROUND" strokeWidth="5.0" />
+                                        <SVGPath fx:id="rightLegB" content="M16,45 L22,60 M28,45 L18,60" stroke="#b89321" strokeLineCap="ROUND" strokeWidth="5.0" visible="false" />
+                                    </children>
+                                </Pane>
+
+                            </children>
+                        </Pane>
+
+                        <Pane fx:id="dealNode" maxHeight="70.0" maxWidth="70.0" prefHeight="70.0" prefWidth="70.0" scaleX="1.4" scaleY="1.4" visible="false" StackPane.alignment="CENTER">
+                            <children>
+                                <Circle centerX="35.0" centerY="35.0" radius="45.0" style="-fx-fill: radial-gradient(center 50% 50%, radius 50%, rgba(229, 193, 88, 0.25), transparent);" />
+                                <Circle centerX="35.0" centerY="35.0" radius="28.0" style="-fx-fill: transparent; -fx-stroke: #22c55e; -fx-stroke-width: 4.5;" />
+                                <SVGPath content="M22,35 L31,43 L48,25" fill="transparent" stroke="#22c55e" strokeLineCap="ROUND" strokeLineJoin="ROUND" strokeWidth="5.0" />
+                            </children>
+                        </Pane>
+
                     </children>
-                </VBox>
+                </StackPane>
+
+                <Label fx:id="statusLabel" alignment="CENTER" text="Đang kết nối tới sàn đấu giá..." textFill="#94a3b8">
+                    <font>
+                        <Font name="System Italic" size="14.0" />
+                    </font>
+                </Label>
+
             </children>
         </VBox>
 
-        <Label text="© 2024 AUCTION VZ - APPDauGiaVjpPro Premium Edition" textFill="#475569" StackPane.alignment="BOTTOM_CENTER">
-            <StackPane.margin>
-                <Insets bottom="25.0" />
-            </StackPane.margin>
-            <font>
-                <Font name="System Bold" size="10.0" />
-            </font>
-        </Label>
     </children>
-</StackPane>
+</AnchorPane>
