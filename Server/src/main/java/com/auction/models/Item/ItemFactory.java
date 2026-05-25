@@ -12,7 +12,6 @@ public abstract class ItemFactory {
         registry.put(type, factory);
     }
 
-    // Factory method cốt lõi
     protected abstract Item createItem(Map<String, Object> data);
 
     public static Item createItem(ItemType type, Map<String, Object> data) {
@@ -23,13 +22,27 @@ public abstract class ItemFactory {
         return factory.createItem(data);
     }
 
-    // =========================================================
-    // CÁC HÀM TIỆN ÍCH VALIDATION (BẮT BUỘC - FAIL FAST)
-    // =========================================================
+    /**
+     * Parses socket/JSON item type strings (including legacy "VEHICLE") into {@link ItemType}.
+     */
+    public static ItemType parseItemType(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            throw new IllegalArgumentException("Item type must not be empty.");
+        }
+
+        String normalizedType = type.trim().toUpperCase();
+        if ("VEHICLE".equals(normalizedType)) {
+            normalizedType = "VEHICLES";
+        }
+        return ItemType.valueOf(normalizedType);
+    }
+
+    public static Item createItem(String type, Map<String, Object> data) {
+        return createItem(parseItemType(type), data);
+    }
 
     protected String getRequiredString(Map<String, Object> data, String key) {
         Object value = data.get(key);
-        // Kiểm tra null hoặc chuỗi chỉ chứa dấu cách
         if (value == null || String.valueOf(value).trim().isEmpty()) {
             throw new IllegalArgumentException("Lỗi: Thiếu thông tin bắt buộc hoặc để trống trường [" + key + "]");
         }
@@ -42,11 +55,9 @@ public abstract class ItemFactory {
             throw new IllegalArgumentException("Lỗi: Thiếu thông tin bắt buộc trường [" + key + "]");
         }
         try {
-            // Xử lý trường hợp data đến từ thư viện JSON (như Gson/Jackson thường ép thành Number)
             if (value instanceof Number) {
                 return ((Number) value).doubleValue();
             }
-            // Ép kiểu từ String
             return Double.parseDouble(String.valueOf(value).trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Lỗi: Trường [" + key + "] sai định dạng số");
@@ -68,10 +79,6 @@ public abstract class ItemFactory {
         }
     }
 
-    // =========================================================
-    // CÁC HÀM TIỆN ÍCH VALIDATION (TÙY CHỌN - SILENT FALLBACK)
-    // =========================================================
-
     protected String getOptionalString(Map<String, Object> data, String key, String defaultValue) {
         Object value = data.get(key);
         if (value == null || String.valueOf(value).trim().isEmpty()) {
@@ -91,8 +98,6 @@ public abstract class ItemFactory {
             }
             return Double.parseDouble(String.valueOf(value).trim());
         } catch (NumberFormatException e) {
-            // Với optional, nếu họ nhập bậy (ví dụ "abc" vào ô giá) thì ta lấy giá trị mặc định
-            // hoặc bạn có thể ném lỗi tùy vào mức độ khắt khe của hệ thống.
             return defaultValue;
         }
     }

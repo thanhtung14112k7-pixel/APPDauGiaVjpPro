@@ -1,24 +1,23 @@
 package com.auction.dto;
 
 import java.io.Serializable;
-import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Detail DTO returned by the server for create, update, and detail item requests.
+ * Request DTO used when Seller/Admin updates editable item fields.
+ * itemType is kept for contract validation, but the server does not allow changing it.
  */
-public class ItemDetailDTO implements Serializable {
+public class UpdateItemRequest implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private String itemId;
-    private String itemName;
-    private Double startingPrice;
     private String itemType;
-    private String status;
+    private String name;
+    private Double startingPrice;
     private String description;
     private Integer yearCreated;
     private String imageUrl;
-    private String sellerId;
-    private LocalDateTime createdAt;
     private String painter;
     private String artStyle;
     private String brand;
@@ -28,24 +27,20 @@ public class ItemDetailDTO implements Serializable {
     private String licensePlate;
     private Double kmAge;
 
-    public ItemDetailDTO() {
+    public UpdateItemRequest() {
     }
 
-    public ItemDetailDTO(String itemId, String itemName, Double startingPrice, String itemType, String status,
-                         String description, Integer yearCreated, String imageUrl, String sellerId,
-                         LocalDateTime createdAt, String painter, String artStyle, String brand,
-                         Integer warrantyMonths, String model, String engineType, String licensePlate,
-                         Double kmAge) {
+    public UpdateItemRequest(String itemId, String itemType, String name, Double startingPrice, String description,
+                             Integer yearCreated, String imageUrl, String painter, String artStyle,
+                             String brand, Integer warrantyMonths, String model, String engineType,
+                             String licensePlate, Double kmAge) {
         this.itemId = itemId;
-        this.itemName = itemName;
-        this.startingPrice = startingPrice;
         this.itemType = itemType;
-        this.status = status;
+        this.name = name;
+        this.startingPrice = startingPrice;
         this.description = description;
         this.yearCreated = yearCreated;
         this.imageUrl = imageUrl;
-        this.sellerId = sellerId;
-        this.createdAt = createdAt;
         this.painter = painter;
         this.artStyle = artStyle;
         this.brand = brand;
@@ -56,30 +51,60 @@ public class ItemDetailDTO implements Serializable {
         this.kmAge = kmAge;
     }
 
-    public ItemSummaryDTO toSummaryDTO() {
-        return new ItemSummaryDTO(itemId, itemName, startingPrice == null ? 0.0 : startingPrice, itemType, status);
+    /**
+     * Converts only present values into the update payload used by ItemService.
+     */
+    public Map<String, Object> toUpdateDataMap() {
+        Map<String, Object> data = new HashMap<>();
+        putIfPresent(data, "name", name);
+        putIfPresent(data, "startingPrice", startingPrice);
+        putIfPresent(data, "description", description);
+        putIfPresent(data, "yearCreated", yearCreated);
+        putIfPresent(data, "imageUrl", imageUrl);
+        putIfPresent(data, "painter", painter);
+        putIfPresent(data, "artStyle", artStyle);
+        putIfPresent(data, "brand", brand);
+        putIfPresent(data, "warrantyMonths", warrantyMonths);
+        putIfPresent(data, "model", model);
+        putIfPresent(data, "engineType", engineType);
+        putIfPresent(data, "licensePlate", licensePlate);
+        putIfPresent(data, "kmAge", kmAge);
+        return data;
+    }
+
+    private void putIfPresent(Map<String, Object> data, String key, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String text && text.trim().isEmpty()) {
+            return;
+        }
+        data.put(key, value);
+    }
+
+    public String getNormalizedItemType() {
+        if (itemType == null) {
+            return null;
+        }
+
+        String normalizedType = itemType.trim().toUpperCase();
+        return "VEHICLE".equals(normalizedType) ? "VEHICLES" : normalizedType;
     }
 
     public String getItemId() { return itemId; }
     public void setItemId(String itemId) { this.itemId = itemId; }
-    public String getItemName() { return itemName; }
-    public void setItemName(String itemName) { this.itemName = itemName; }
-    public Double getStartingPrice() { return startingPrice; }
-    public void setStartingPrice(Double startingPrice) { this.startingPrice = startingPrice; }
     public String getItemType() { return itemType; }
     public void setItemType(String itemType) { this.itemType = itemType; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public Double getStartingPrice() { return startingPrice; }
+    public void setStartingPrice(Double startingPrice) { this.startingPrice = startingPrice; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public Integer getYearCreated() { return yearCreated; }
     public void setYearCreated(Integer yearCreated) { this.yearCreated = yearCreated; }
     public String getImageUrl() { return imageUrl; }
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
-    public String getSellerId() { return sellerId; }
-    public void setSellerId(String sellerId) { this.sellerId = sellerId; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public String getPainter() { return painter; }
     public void setPainter(String painter) { this.painter = painter; }
     public String getArtStyle() { return artStyle; }
