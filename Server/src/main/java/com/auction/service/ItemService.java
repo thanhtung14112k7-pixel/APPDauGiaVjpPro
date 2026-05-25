@@ -2,8 +2,10 @@ package com.auction.service;
 
 import com.auction.dao.ItemDAO;
 import com.auction.dao.impl.ItemDAOImpl;
+import com.auction.dto.ItemDetailDTO; // DTO chi tiết dùng làm response body cho CREATE_ITEM, UPDATE_ITEM, GET_ITEM_DETAIL
 import com.auction.dto.ItemSummaryDTO;
 import com.auction.enums.ItemStatus;
+import com.auction.enums.ItemType;
 import com.auction.exception.AuctionErrorCode;
 import com.auction.exception.AuctionException;
 import com.auction.exception.ValidationErrorCode;
@@ -23,8 +25,9 @@ public class ItemService {
 
     /**
      * 1. [HÀM CHUNG] - THÊM VẬT PHẨM MỚI
+     * Trả về ItemDetailDTO để Client biết item vừa tạo có id và dữ liệu chuẩn gì từ Server
      */
-    public void addItem(String type, Map<String, Object> data) {
+    public ItemDetailDTO addItem(ItemType type, Map<String, Object> data) {
         if (type == null || data == null) {
             throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Missing type or parameter payload data.");
         }
@@ -41,15 +44,20 @@ public class ItemService {
                 throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Persisting new item failed.");
             }
             productManage.addProduct(newItem);
+
+            // Ép kiểu sang DTO để trả về phản hồi mạch lạc cho Client
+            return toItemDetailDTO(newItem);
         } catch (IllegalArgumentException e) {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Factory payload evaluation error: " + e.getMessage());
         }
     }
 
+
     /**
-     * 2. [HÀM CHUNG] - CHỈNH SỬA THÔNG TIN VẬT PHẨM
+     * 2. [HÀM CHUNG] - CHỈNH SỬA THÔNG TIN VẬT PHẨM (ĐÃ ĐỒNG BỘ ĐA HÌNH)
+     * Trả về ItemDetailDTO sau khi sửa thành công giúp Client cập nhật giao diện thời gian thực
      */
-    public void updateItemInfo(String itemId, String type, Map<String, Object> incomingData) {
+    public ItemDetailDTO updateItemInfo(String itemId, ItemType type, Map<String, Object> incomingData) {
         if (itemId == null || type == null || incomingData == null) {
             throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Invalid update request mapping criteria.");
         }
@@ -59,18 +67,69 @@ public class ItemService {
             throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND);
         }
 
+        // 🎯 SỬ DỤNG THAM SỐ 'type' LẦN 1: Bảo vệ hệ thống (Defensive Check)
+        if (liveItem.getItemType() != type) {
+            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Mâu thuẫn loại vật phẩm. Không thể thay đổi loại của vật phẩm đang tồn tại.");
+        }
+
+        // 🎯 SỬ DỤNG THAM SỐ 'type' LẦN 2: Thách thức dữ liệu qua bộ lọc Factory (Fail-Fast Validation)
+        ItemFactory.createItem(type, incomingData);
+
         synchronized (liveItem.getId().intern()) {
             if (liveItem.getStatus() != ItemStatus.ACTIVE) {
                 throw new AuctionException(AuctionErrorCode.ITEM_IS_LOCKED);
             }
 
+            // 1. Cập nhật các trường chung (name, description, startingPrice...)
             updateLiveItemFields(liveItem, incomingData);
-            boolean isUpdatedDB = itemDAO.updateItem(liveItem);
 
+            // 2. 🎯 SỬ DỤNG THAM SỐ 'type' LẦN 3: Ép kiểu đa hình để cập nhật trường riêng biệt
+            updateSubClassFields(liveItem, type, incomingData);
+
+            // 3. Ghi nhận xuống Cơ sở dữ liệu
+            boolean isUpdatedDB = itemDAO.updateItem(liveItem);
             if (!isUpdatedDB) {
                 throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Synchronizing modified item properties to store failed.");
             }
+
+            // 4. Đồng bộ lên bộ nhớ đệm RAM của ProductManage
             productManage.updateProduct(itemId, liveItem);
+
+            // Trả về DTO mới nhất sau khi đã lưu cấu trúc thành công
+            return toItemDetailDTO(liveItem);
+        }
+    }
+
+    /**
+     * Hàm hỗ trợ: Phân luồng để nạp dữ liệu đặc trưng cho từng lớp con
+     */
+    private void updateSubClassFields(Item liveItem, ItemType type, Map<String, Object> incomingData) {
+        switch (type) {
+            case ELECTRONICS:
+                if (liveItem instanceof Electronics electronics) {
+                    electronics.setBrand((String) incomingData.get("brand"));
+                    if (incomingData.get("warrantyMonths") instanceof Number) {
+                        electronics.setWarrantyMonths(((Number) incomingData.get("warrantyMonths")).intValue());
+                    }
+                }
+                break;
+
+            case ART:
+                if (liveItem instanceof Art art) {
+                    art.setPainter((String) incomingData.get("painter"));
+                    art.setArtStyle((String) incomingData.get("artStyle"));
+                }
+                break;
+
+            case VEHICLES:
+                if (liveItem instanceof Vehicle vehicle) {
+                    vehicle.setModel((String) incomingData.get("model"));
+                    vehicle.setLicensePlate((String) incomingData.get("licensePlate"));
+                    if (incomingData.get("kmAge") instanceof Number) {
+                        vehicle.setKmAge(((Number) incomingData.get("kmAge")).doubleValue());
+                    }
+                }
+                break;
         }
     }
 
@@ -105,7 +164,7 @@ public class ItemService {
     }
 
     /**
-     * 4. [HÀM CỦA SELLER] - Lấy chi tiết toàn bộ một vật phẩm
+     * 4. [HÀM HỆ THỐNG] - Lấy chi tiết toàn bộ một vật phẩm dạng Entity gốc nội bộ
      */
     public Item getDetailedItem(String itemId) {
         if (itemId == null || itemId.trim().isEmpty()) {
@@ -116,6 +175,13 @@ public class ItemService {
             throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND);
         }
         return item;
+    }
+
+    /**
+     * 4b. [HÀM CHO CLIENT] - Hàm phản hồi chuẩn cho yêu cầu GET_ITEM_DETAIL qua Socket mạng
+     */
+    public ItemDetailDTO getDetailedItemDTO(String itemId) {
+        return toItemDetailDTO(getDetailedItem(itemId));
     }
 
     /**
@@ -148,6 +214,64 @@ public class ItemService {
             }
         }
         return item;
+    }
+
+    /**
+     * 🔥 HÀM HỖ TRỢ ĐA HÌNH: Ánh xạ cấu trúc dữ liệu Entity và lớp con tương ứng sang DTO phẳng
+     */
+    private ItemDetailDTO toItemDetailDTO(Item item) {
+        if (item == null) {
+            throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND);
+        }
+
+        String painter = null;
+        String artStyle = null;
+        String brand = null;
+        Integer warrantyMonths = null;
+        String model = null;
+        String engineType = null;
+        String licensePlate = null;
+        Double kmAge = null;
+
+        // Trích xuất chính xác các thuộc tính ẩn sâu dựa trên mẫu hình thực tế của đối tượng (Java 21 Pattern Matching)
+        switch (item) {
+            case Art art -> {
+                painter = art.getPainter();
+                artStyle = art.getArtStyle();
+            }
+            case Electronics electronics -> {
+                brand = electronics.getBrand();
+                warrantyMonths = electronics.getWarrantyMonths();
+            }
+            case Vehicle vehicle -> {
+                model = vehicle.getModel();
+                engineType = vehicle.getEngineType();
+                licensePlate = vehicle.getLicensePlate();
+                kmAge = vehicle.getKmAge();
+            }
+            default -> {}
+        }
+
+        return new ItemDetailDTO(
+                item.getId(),
+                item.getName(),
+                item.getStartingPrice(),
+                item.getItemType().name(),
+                item.getStatus().name(),
+                item.getDescription(),
+                item.getYearCreated(),
+                item.getImageUrl(),
+                item.getSellerId(),
+                item.getCreatedAt(),
+                painter,
+                artStyle,
+                brand,
+                warrantyMonths,
+                model,
+                engineType,
+                licensePlate,
+                kmAge
+        );
     }
 
     private void updateLiveItemFields(Item liveItem, Map<String, Object> incomingData) {

@@ -1,27 +1,22 @@
 package com.auction.models.Item;
 
+import com.auction.enums.ItemType;
+
 import java.util.HashMap;
 import java.util.Map;
 
 public abstract class ItemFactory {
-    private static final Map<String, ItemFactory> registry = new HashMap<>();
+    private static final Map<ItemType, ItemFactory> registry = new HashMap<>();
 
-    //Giao nó cho một lớp Khởi tạo hệ thống (hoặc hàm main khi Server vừa bật lên) để tránh deadlock
-    /*static {
-        registry.put("ART", new ArtFactory());
-        registry.put("VEHICLE", new VehicleFactory());
-        registry.put("ELECTRONICS", new ElectronicsFactory());
-    }*/
-
-    public static void register(String type, ItemFactory factory) {
-        registry.put(type.toUpperCase(), factory);
+    public static void register(ItemType type, ItemFactory factory) {
+        registry.put(type, factory);
     }
 
     // Factory method cốt lõi
     protected abstract Item createItem(Map<String, Object> data);
 
-    public static Item createItem(String type, Map<String, Object> data) {
-        ItemFactory factory = registry.get(type.toUpperCase());
+    public static Item createItem(ItemType type, Map<String, Object> data) {
+        ItemFactory factory = registry.get(type);
         if (factory == null) {
             throw new IllegalArgumentException("Lỗi: Không hỗ trợ loại vật phẩm [" + type + "]");
         }
