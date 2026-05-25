@@ -28,7 +28,7 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin' # Sử dụng bản phân phối Eclipse Temurin hiệu năng cao, độ ổn định cực tốt
           cache: 'maven' # ⚡ KÍCH HOẠT CACHE TỐI ƯU: Tự động băm nhỏ (hash) file pom.xml để đóng băng/nạp nhanh thư viện phụ thuộc
 
