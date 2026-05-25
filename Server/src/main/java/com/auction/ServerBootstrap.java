@@ -1,5 +1,7 @@
 package com.auction;
 
+import com.auction.dao.UserDAO;
+import com.auction.dao.impl.UserDAOImpl;
 import com.auction.enums.ItemType;
 import com.auction.enums.UserRole;
 import com.auction.event.AuctionEventBus;
@@ -16,6 +18,7 @@ import com.auction.dao.AuctionDAO;
 import com.auction.dao.ItemDAO;
 import com.auction.dao.impl.AuctionDAOImpl;
 import com.auction.dao.impl.ItemDAOImpl;
+import com.auction.models.User.User;
 import com.auction.service.AuctionService;
 import com.auction.service.AuthService;
 import com.auction.service.ItemService;
@@ -23,10 +26,7 @@ import com.auction.config.DatabaseConnection;
 
 import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
+import java.util.*;
 
 import static com.auction.models.User.UserFactory.setRegistry;
 
@@ -88,7 +88,7 @@ public class ServerBootstrap {
      */
     private void setupSystemTimezone() {
         System.out.println("[Bootstrap] 0. Thiết lập cấu hình múi giờ chuẩn hệ thống (Asia/Ho_Chi_Minh)...");
-        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ha_Noi"));
     }
 
     /**
@@ -192,41 +192,33 @@ public class ServerBootstrap {
     private void seedItemsForTesting() {
         System.out.println("[Bootstrap] 5.5a Tiến hành bơm dữ liệu mẫu Items (Vật phẩm)...");
         ItemService itemService = new ItemService();
+        UserDAO userDAO = new UserDAOImpl();
+        User seller1 = userDAO.findByUsername("seller1").get();
 
         // Dữ liệu mẫu Electronics
-        createElectronicsItem(itemService, "Laptop Dell XPS 13", 12000000.0, 2023, "seller1",
+        createElectronicsItem(itemService, "Laptop Dell XPS 13", 12000000.0, 2023, seller1.getId(),
                 "Laptop siêu mỏng, hiệu năng cao", "dell_xps.png", "Dell", 24);
 
-        createElectronicsItem(itemService, "iPhone 14 Pro", 18000000.0, 2023, "seller1",
+        createElectronicsItem(itemService, "iPhone 14 Pro", 18000000.0, 2023, seller1.getId(),
                 "iPhone 14 Pro màu bạc, cô hồn lẻ", "iphone14pro.png", "Apple", 12);
 
-        createElectronicsItem(itemService, "Samsung 55\" OLED TV", 15000000.0, 2023, "seller1",
-                "Tivi OLED 55 inch, tần số 120Hz", "samsung_tv.png", "Samsung", 36);
-
         // Dữ liệu mẫu Art
-        createArtItem(itemService, "Tranh sơn dầu cổ", 25000000.0, 1950, "seller1",
+        createArtItem(itemService, "Tranh sơn dầu cổ", 25000000.0, 1950, seller1.getId(),
                 "Tranh phong cảnh Châu Âu thế kỷ 20", "painting_1.png", "Picasso", "Cubism");
 
-        createArtItem(itemService, "Tượng gỗ phật", 8000000.0, 1890, "seller1",
+        createArtItem(itemService, "Tượng gỗ phật", 8000000.0, 1890, seller1.getId(),
                 "Tượng phật bằng gỗ nguyên khúc", "statue_1.png", "Unknown", "Buddhism");
 
-        createArtItem(itemService, "Mặt nạ Hy Lạp cổ đại", 35000000.0, 300, "seller1",
-                "Mặt nạ từ thời kỳ Hy Lạp cổ đại", "mask_greek.png", "Ancient", "Classical");
-
         // Dữ liệu mẫu Vehicles
-        createVehicleItem(itemService, "Toyota Camry 2.5L", 650000000.0, 2020, "seller1",
+        createVehicleItem(itemService, "Toyota Camry 2.5L", 650000000.0, 2020, seller1.getId(),
                 "Xe sedan, động cơ xăng 2.5L, trạng thái mới", "toyota_camry.png",
                 "Camry 2.5LE", "Petrol", "29A-123456", 45000.0);
 
-        createVehicleItem(itemService, "Honda Civic 2019", 580000000.0, 2019, "seller1",
+        createVehicleItem(itemService, "Honda Civic 2019", 580000000.0, 2019, seller1.getId(),
                 "Xe hatchback 5 cửa, màu đen nguyên zin", "honda_civic.png",
                 "Civic EX", "Petrol", "30B-654321", 72000.0);
 
-        createVehicleItem(itemService, "Harley Davidson Street 750", 320000000.0, 2021, "seller1",
-                "Mô tô cruiser, máy 750cc, độ chế", "harley.png",
-                "Street 750 Custom", "Petrol", "51C-987654", 8500.0);
-
-        System.out.println("[Bootstrap]    -> Thành công: Hoàn tất tạo 9 vật phẩm thử nghiệm.");
+        System.out.println("[Bootstrap]    -> Thành công: Hoàn tất tạo 6 vật phẩm thử nghiệm.");
     }
 
     private void createElectronicsItem(ItemService itemService, String name, double price, int year,
@@ -302,8 +294,11 @@ public class ServerBootstrap {
         AuctionService auctionService = new AuctionService();
 
         try {
+            UserDAO userDAO = new UserDAOImpl();
+            User seller1 = userDAO.findByUsername("seller1").get();
+            String id = seller1.getId();
             // Lấy danh sách items từ seller1 trong DB
-            List<com.auction.models.Item.Item> items = itemDAO.findBySellerId("seller1");
+            List<com.auction.models.Item.Item> items = itemDAO.findBySellerId(id);
 
             if (items.isEmpty()) {
                 System.out.println("[Bootstrap]    ⚠️ Cảnh báo: Không tìm thấy items nào từ seller1, bỏ qua tạo auctions.");
@@ -318,15 +313,16 @@ public class ServerBootstrap {
                 try {
                     com.auction.models.Item.Item item = items.get(i);
                     LocalDateTime now = LocalDateTime.now();
-                    LocalDateTime startTime = now.plusHours(1);
-                    LocalDateTime endTime = startTime.plusHours(24);
+                    LocalDateTime startTime = now.minusSeconds(5);
+                    // 2. Ép thời gian đóng phòng kết thúc đúng sau 15 phút
+                    LocalDateTime endTime = now.plusMinutes(2);
 
                     // Bước giá tối thiểu: 10% giá khởi động
                     double stepPrice = item.getStartingPrice() * 0.1;
 
                     auctionService.createAuction(
                             item.getId(),
-                            "seller1",
+                            id,
                             stepPrice,
                             startTime,
                             endTime
