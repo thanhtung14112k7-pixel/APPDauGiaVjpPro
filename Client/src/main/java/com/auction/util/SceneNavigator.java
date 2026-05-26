@@ -82,7 +82,7 @@ public class SceneNavigator {
         /*
          * live-bidding.fxml tu tao LiveBiddingController.
          * Sau khi load xong, lay controller ra va truyen auctionId vao.
-         * Tu day LiveBiddingController moi biet can subscribe realtime cho phien dau gia nao.
+         * Tu day LiveBiddingController moi biet can enterLiveRoom cho phien dau gia nao.
          */
         LiveBiddingController controller = loader.getController();
         controller.setAuctionId(auctionId);

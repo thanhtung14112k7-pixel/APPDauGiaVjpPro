@@ -105,6 +105,31 @@ public class ClientAuctionApi {
         AuctionSubscriptionRequest request = new AuctionSubscriptionRequest(auctionId);
         return sendRequest(ActionType.AUCTION_UNSUBSCRIBED, request);
     }
+    /**
+     * Client vao man live bidding cua mot phien dau gia.
+     *
+     * Vai tro:
+     * - Gui action LIVE_ENTERED len server.
+     * - Server se them user vao live room.
+     * - Server co the broadcast lai so nguoi dang xem cho cac client trong room.
+     */
+    public SocketResponse enterLiveRoom(String auctionId) {
+        AuctionSubscriptionRequest request = new AuctionSubscriptionRequest(auctionId);
+        return sendRequest(ActionType.LIVE_ENTERED, request);
+    }
+
+    /**
+     * Client roi khoi man live bidding cua mot phien dau gia.
+     *
+     * Vai tro:
+     * - Gui action LIVE_EXITED len server.
+     * - Server se xoa user khoi live room.
+     * - Client sau do khong nen tiep tuc nhan event realtime cua room nay.
+     */
+    public SocketResponse exitLiveRoom(String auctionId) {
+        AuctionSubscriptionRequest request = new AuctionSubscriptionRequest(auctionId);
+        return sendRequest(ActionType.LIVE_EXITED, request);
+    }
 
     /**
      * Gửi request hủy một phiên đấu giá.

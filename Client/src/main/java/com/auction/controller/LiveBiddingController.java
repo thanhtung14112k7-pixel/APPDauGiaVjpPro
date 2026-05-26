@@ -3,9 +3,12 @@ package com.auction.controller;
 import com.auction.dto.AuctionDetailDTO;
 import com.auction.dto.BidTransactionDTO;
 import com.auction.dto.SocketResponse;
+import com.auction.dto.UserDTO;
+import com.auction.enums.UserRole;
 import com.auction.network.ClientAuctionApi;
 import com.auction.service.ClientSocketService;
 import com.auction.service.RealtimeUpdateListener;
+import com.auction.util.ClientSession;
 import com.auction.util.SceneNavigator;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -34,13 +37,13 @@ import java.util.List;
  * - Nhan auctionId cua phien dau gia can xem truc tiep.
  * - Load chi tiet phien dau gia bang GET_AUCTION_DETAIL.
  * - Dang ky realtime listener voi ClientSocketService.
- * - Gui SUBSCRIBE_AUCTION de Server dua client vao live room.
+ * - Gui LIVE_ENTERED de Server dua client vao live room (socket realtime).
  * - Gui PLACE_BID khi nguoi dung dat gia.
  * - Nhan BID_UPDATE de cap nhat gia hien tai.
  * - Nhan TIME_UPDATE de cap nhat thoi gian con lai.
- * - Nhan VIEWER_COUNT_UPDATED de cap nhat so nguoi xem.
+ * - Nhan LIVE_ENTERED / LIVE_EXITED (va VIEWER_COUNT_UPDATED neu co) de cap nhat so nguoi xem.
  * - Tam thoi xu ly STATUS_UPDATED neu Server gui ve.
- * - Gui UNSUBSCRIBE_AUCTION va go listener khi roi man hinh.
+ * - Gui LIVE_EXITED va go listener khi roi man hinh (khong dung AUCTION_UNSUBSCRIBED).
  *
  * Controller nay chi xu ly UI va dieu phoi request.
  * Server van la noi kiem tra quyen, tien, buoc gia va trang thai phien.
@@ -60,6 +63,8 @@ public class LiveBiddingController implements RealtimeUpdateListener {
     private static final String ACTION_BID_UPDATE = "BID_UPDATE";
     private static final String ACTION_TIME_UPDATE = "TIME_UPDATE";
     private static final String ACTION_VIEWER_COUNT_UPDATED = "VIEWER_COUNT_UPDATED";
+    private static final String ACTION_LIVE_ENTERED = "LIVE_ENTERED";
+    private static final String ACTION_LIVE_EXITED = "LIVE_EXITED";
     private static final String ACTION_STATUS_UPDATED = "STATUS_UPDATED";
 
     /*
@@ -68,6 +73,7 @@ public class LiveBiddingController implements RealtimeUpdateListener {
     private static final String ACTION_BID_UPDATED = "BID_UPDATED";
     private static final String ACTION_AUCTION_ENDED = "AUCTION_ENDED";
     private static final String ACTION_AUCTION_CANCELED = "AUCTION_CANCELED";
+
 
     /*
      * auctionId khong lay truc tiep tu FXML.
@@ -82,10 +88,10 @@ public class LiveBiddingController implements RealtimeUpdateListener {
     private AuctionDetailDTO currentAuctionDetail;
 
     /*
-     * subscribed = true khi Server da dua client vao live room cua auction hien tai.
-     * Dung de tranh unsubscribe thua hoac subscribe lap.
+     * liveRoomJoined = true khi Server da dua client vao live room cua auction hien tai.
+     * Dung de tranh exitLiveRoom thua hoac enterLiveRoom lap.
      */
-    private boolean subscribed;
+    private boolean liveRoomJoined;
 
     /*
      * listenerRegistered = true khi controller da dang ky voi ClientSocketService.
@@ -217,23 +223,28 @@ public class LiveBiddingController implements RealtimeUpdateListener {
      * - Luu auctionId.
      * - Dang ky listener de nhan EVENT.
      * - Load chi tiet phien.
-     * - Subscribe live room tren Server.
+     * - enterLiveRoom tren Server.
      */
     public void setAuctionId(String auctionId) {
+        if (!isCurrentUserBidder()) {
+            showError("Chi tai khoan Bidder moi duoc vao phong live bidding.");
+            return;
+        }
+
         if (isBlank(auctionId)) {
             showError("Khong tim thay auctionId cua phien dau gia.");
             return;
         }
 
         if (!isBlank(this.auctionId) && !this.auctionId.equals(auctionId)) {
-            cleanupRealtimeSubscription();
+            cleanupLiveRoom();
         }
 
         this.auctionId = auctionId.trim();
 
         registerRealtimeListener();
         loadAuctionDetail();
-        subscribeCurrentAuction();
+        enterCurrentLiveRoom();
     }
 
     /**
@@ -276,17 +287,17 @@ public class LiveBiddingController implements RealtimeUpdateListener {
     }
 
     /**
-     * Goi SUBSCRIBE_AUCTION de Server dua socket hien tai vao live room cua phien.
+     * Goi LIVE_ENTERED de Server dua socket hien tai vao live room cua phien.
      */
-    private void subscribeCurrentAuction() {
-        if (isBlank(auctionId) || subscribed) {
+    private void enterCurrentLiveRoom() {
+        if (isBlank(auctionId) || liveRoomJoined) {
             return;
         }
 
-        SocketResponse response = auctionApi.subscribeAuction(auctionId);
+        SocketResponse response = auctionApi.enterLiveRoom(auctionId);
 
         if (response == null) {
-            showError("Server khong tra ve phan hoi khi dang ky live room.");
+            showError("Server khong tra ve phan hoi khi vao live room.");
             return;
         }
 
@@ -295,7 +306,7 @@ public class LiveBiddingController implements RealtimeUpdateListener {
             return;
         }
 
-        subscribed = true;
+        liveRoomJoined = true;
         showMessage("Da ket noi live room cua phien dau gia.");
     }
 
@@ -433,7 +444,7 @@ public class LiveBiddingController implements RealtimeUpdateListener {
      */
     @FXML
     private void handleBack() {
-        cleanupRealtimeSubscription();
+        cleanupLiveRoom();
         SceneNavigator.showAuctionList();
     }
 
@@ -462,7 +473,9 @@ public class LiveBiddingController implements RealtimeUpdateListener {
             return;
         }
 
-        if (ACTION_VIEWER_COUNT_UPDATED.equals(action)) {
+        if (ACTION_VIEWER_COUNT_UPDATED.equals(action)
+                || ACTION_LIVE_ENTERED.equals(action)
+                || ACTION_LIVE_EXITED.equals(action)) {
             handleViewerCountUpdatedEvent(event);
             return;
         }
@@ -540,9 +553,10 @@ public class LiveBiddingController implements RealtimeUpdateListener {
     }
 
     /**
-     * Xu ly event VIEWER_COUNT_UPDATED.
+     * Cap nhat so nguoi xem live room.
      *
-     * Event nay cap nhat so nguoi dang xem live room.
+     * Server gui qua LIVE_ENTERED / LIVE_EXITED (field currentViewerCount)
+     * hoac VIEWER_COUNT_UPDATED (field viewerCount) tuy phien ban contract.
      */
     private void handleViewerCountUpdatedEvent(SocketResponse event) {
         JsonObject body = getBodyAsObject(event);
@@ -551,7 +565,13 @@ public class LiveBiddingController implements RealtimeUpdateListener {
             return;
         }
 
-        Integer viewerCount = readInteger(body, "viewerCount", "viewCount", "count");
+        Integer viewerCount = readInteger(
+                body,
+                "currentViewerCount",
+                "viewerCount",
+                "viewCount",
+                "count"
+        );
 
         if (viewerCount == null) {
             return;
@@ -594,9 +614,9 @@ public class LiveBiddingController implements RealtimeUpdateListener {
                 setBidControlsDisabled(true);
 
                 /*
-                 * Neu Server da ket thuc/huy room, client khong can gui unsubscribe nua.
+                 * Neu Server da ket thuc/huy room, client khong can gui LIVE_EXITED nua.
                  */
-                subscribed = false;
+                liveRoomJoined = false;
                 unregisterRealtimeListener();
             }
         });
@@ -606,21 +626,21 @@ public class LiveBiddingController implements RealtimeUpdateListener {
      * Goi khi roi man hinh hoac chuyen sang auctionId khac.
      */
     public void dispose() {
-        cleanupRealtimeSubscription();
+        cleanupLiveRoom();
     }
 
     /**
-     * Roi live room tren Server va go listener tren Client.
+     * Roi live room tren Server (LIVE_EXITED) va go listener tren Client.
      */
-    private void cleanupRealtimeSubscription() {
-        if (subscribed && !isBlank(auctionId)) {
-            SocketResponse response = auctionApi.unsubscribeAuction(auctionId);
+    private void cleanupLiveRoom() {
+        if (liveRoomJoined && !isBlank(auctionId)) {
+            SocketResponse response = auctionApi.exitLiveRoom(auctionId);
 
             if (response == null || !response.isSuccess()) {
-                System.err.println("[LiveBiddingController] Khong the unsubscribe auctionId = " + auctionId);
+                System.err.println("[LiveBiddingController] Khong the exit live room auctionId = " + auctionId);
             }
 
-            subscribed = false;
+            liveRoomJoined = false;
         }
 
         unregisterRealtimeListener();
@@ -902,5 +922,14 @@ public class LiveBiddingController implements RealtimeUpdateListener {
         alert.setHeaderText(null);
         alert.setContentText(safeText(message));
         alert.showAndWait();
+    }
+
+    private boolean isCurrentUserBidder() {
+        if (!ClientSession.isLoggedIn()) {
+            return false;
+        }
+
+        UserDTO user = ClientSession.getCurrentUser();
+        return user != null && user.getRole() == UserRole.BIDDER;
     }
 }

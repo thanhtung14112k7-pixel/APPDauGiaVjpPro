@@ -3,7 +3,10 @@ package com.auction.controller;
 import com.auction.dto.AuctionDetailDTO;
 import com.auction.dto.BidTransactionDTO;
 import com.auction.dto.SocketResponse;
+import com.auction.dto.UserDTO;
+import com.auction.enums.UserRole;
 import com.auction.network.ClientAuctionApi;
+import com.auction.util.ClientSession;
 import com.auction.util.SceneNavigator;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -11,6 +14,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -41,9 +45,7 @@ import java.util.List;
  * - Controller này chỉ xử lý giao diện và gọi API phía Client.
  * - Controller này không tự xử lý nghiệp vụ đấu giá.
  * - Server mới là nơi kiểm tra quyền, kiểm tra số tiền bid và cập nhật dữ liệu thật.
- * - Phần realtime SUBSCRIBE_AUCTION chưa bật tự động ở đây.
- *   Lý do: server hiện broadcast message dạng chuỗi thường, chưa phải SocketResponse.event.
- *   Khi hoàn thiện LiveBiddingController và realtime listener thì sẽ nối phần đó sau.
+ * - Nút "Vào phòng live" chỉ hiển thị cho Bidder; màn live dùng LIVE_ENTERED / LIVE_EXITED.
  */
 public class AuctionDetailController {
     private final ClientAuctionApi auctionApi = new ClientAuctionApi();
@@ -162,6 +164,9 @@ public class AuctionDetailController {
     @FXML
     private TableColumn<BidTransactionDTO, String> bidStatusColumn;
 
+    @FXML
+    private Button openLiveBiddingButton;
+
     /**
      * initialize() được JavaFX tự động gọi sau khi load auction-detail.fxml.
      *
@@ -173,6 +178,7 @@ public class AuctionDetailController {
     @FXML
     public void initialize() {
         setupBidHistoryTable();
+        applyLiveBiddingAccess();
         showMessage("Chưa chọn phiên đấu giá.");
     }
 
@@ -189,6 +195,7 @@ public class AuctionDetailController {
      */
     public void setAuctionId(String auctionId) {
         this.auctionId = auctionId;
+        applyLiveBiddingAccess();
         loadAuctionDetail();
     }
 
@@ -375,16 +382,40 @@ public class AuctionDetailController {
      * - Kiem tra auctionId hien tai co hop le khong.
      * - Chuyen sang man live-bidding.fxml thong qua SceneNavigator.
      * - SceneNavigator se truyen auctionId sang LiveBiddingController.
-     * - LiveBiddingController dung auctionId nay de subscribe realtime room.
+     * - LiveBiddingController dung auctionId nay de enterLiveRoom tren Server.
      */
     @FXML
     private void handleOpenLiveBidding() {
+        if (!isCurrentUserBidder()) {
+            showError("Chi tai khoan Bidder moi duoc vao phong live bidding.");
+            return;
+        }
+
         if (isBlank(auctionId)) {
             showError("Khong tim thay phien dau gia de vao phong live bidding.");
             return;
         }
 
         SceneNavigator.showLiveBidding(auctionId);
+    }
+
+    private void applyLiveBiddingAccess() {
+        if (openLiveBiddingButton == null) {
+            return;
+        }
+
+        boolean bidder = isCurrentUserBidder();
+        openLiveBiddingButton.setVisible(bidder);
+        openLiveBiddingButton.setManaged(bidder);
+    }
+
+    private boolean isCurrentUserBidder() {
+        if (!ClientSession.isLoggedIn()) {
+            return false;
+        }
+
+        UserDTO user = ClientSession.getCurrentUser();
+        return user != null && user.getRole() == UserRole.BIDDER;
     }
     /**
      * Đọc và parse số tiền người dùng nhập.

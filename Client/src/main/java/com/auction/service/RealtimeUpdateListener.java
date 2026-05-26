@@ -8,7 +8,7 @@ import com.auction.dto.SocketResponse;
  * Vi du:
  * - LiveBiddingController nhan BID_UPDATE de cap nhat gia moi.
  * - LiveBiddingController nhan TIME_UPDATE de cap nhat thoi gian con lai.
- * - LiveBiddingController nhan VIEWER_COUNT_UPDATED de cap nhat so nguoi xem.
+ * - LiveBiddingController nhan LIVE_ENTERED / LIVE_EXITED de cap nhat so nguoi xem.
  * - LiveBiddingController co the nhan STATUS_UPDATED khi Server chot format trang thai.
  *
  * ClientSocketService khong can biet controller cu the nao dang lang nghe.

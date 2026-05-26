@@ -35,26 +35,26 @@ public class AuthorizationService {
     private static final Set<String> LOGIN_REQUIRED_ACTIONS = Set.of(
             ActionType.LOGOUT.name(),
             ActionType.GET_ACTIVE_AUCTIONS.name(),
-            ActionType.GET_AUCTION_DETAIL.name(),
-            ActionType.AUCTION_SUBSCRIBED.name(),
-            ActionType.AUCTION_UNSUBSCRIBED.name()
+            ActionType.GET_AUCTION_DETAIL.name()
     );
 
     /**
      Phân quyền theo role dùng Map với Key: tên action Client gửi lên
      Value: danh sách role được phép thực hiện action
      */
-    private static final Map<String, Set<UserRole>> ROLE_PERMISSIONS = Map.of(
-            ActionType.CREATE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-            ActionType.UPDATE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-            ActionType.DELETE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-            ActionType.GET_SELLER_ITEMS.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-            ActionType.GET_ITEM_DETAIL.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-
-            ActionType.CREATE_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-            ActionType.CANCEL_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN),
-
-            ActionType.PLACE_BID.name(), Set.of(UserRole.BIDDER)
+    private static final Map<String, Set<UserRole>> ROLE_PERMISSIONS = Map.ofEntries(
+            Map.entry(ActionType.CREATE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.UPDATE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.DELETE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.GET_SELLER_ITEMS.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.GET_ITEM_DETAIL.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.CREATE_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.CANCEL_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.PLACE_BID.name(), Set.of(UserRole.BIDDER)),
+            Map.entry(ActionType.LIVE_ENTERED.name(), Set.of(UserRole.BIDDER)),
+            Map.entry(ActionType.LIVE_EXITED.name(), Set.of(UserRole.BIDDER)),
+            Map.entry(ActionType.AUCTION_SUBSCRIBED.name(), Set.of(UserRole.BIDDER)),
+            Map.entry(ActionType.AUCTION_UNSUBSCRIBED.name(), Set.of(UserRole.BIDDER))
     );
 
     /**

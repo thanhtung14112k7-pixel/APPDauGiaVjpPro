@@ -111,9 +111,9 @@ public class AuctionController {
     // =========================================================================
 
     /**
-     * Người dùng mở Tab xem màn hình chi tiết thời gian thực công khai.
-     * Action tương ứng: SUBSCRIBE_AUCTION
-     * Luồng: Cắm kết nối Socket vật lý vào LiveRoomManage để nghe đếm giây và chat phòng.
+     * Người dùng mở màn hình live bidding.
+     * Action tương ứng: LIVE_ENTERED
+     * Luồng: Cắm ClientSession vào LiveRoomManage để nhận realtime (bid, timer, viewer count).
      */
     public AuctionDetailDTO joinLiveRoom(String bodyJson, ClientSession session) {
         AuctionSubscriptionRequest request = parseBody(bodyJson, AuctionSubscriptionRequest.class);
@@ -133,9 +133,9 @@ public class AuctionController {
     }
 
     /**
-     * Người dùng đóng/thoát Tab xem chi tiết để chuyển đi màn hình khác.
-     * Action tương ứng: UNSUBSCRIBE_AUCTION
-     * Luồng: Tháo Socket kết nối ra khỏi phòng phát loa để tiết kiệm tài nguyên mạng vật lý.
+     * Người dùng đóng màn hình live bidding (không hủy theo dõi phiên nền).
+     * Action tương ứng: LIVE_EXITED
+     * Luồng: Rút ClientSession khỏi LiveRoomManage, giữ business tracking nếu có.
      */
     public void leaveLiveRoom(String bodyJson, ClientSession session) {
         AuctionSubscriptionRequest request = parseBody(bodyJson, AuctionSubscriptionRequest.class);
