@@ -12,7 +12,7 @@ class ItemTest {
 
     /**
      * Test constructor tạo mới của Item thông qua class con Electronics.
-     *
+     * <p>
      * Vì Item là abstract class nên không thể new Item() trực tiếp.
      * Ta dùng Electronics để kiểm tra các field chung của Item:
      * - name
@@ -60,10 +60,10 @@ class ItemTest {
 
     /**
      * Test trạng thái mặc định của item mới.
-     *
+     * <p>
      * Trong constructor tạo mới của Item:
      * this.status = ItemStatus.ACTIVE;
-     *
+     * <p>
      * Vì vậy item mới tạo phải có status ACTIVE.
      */
     @Test
@@ -85,10 +85,10 @@ class ItemTest {
 
     /**
      * Test createdAt của item mới.
-     *
+     * <p>
      * Trong constructor tạo mới của Item:
      * this.createdAt = LocalDateTime.now();
-     *
+     * <p>
      * Vì vậy createdAt không được null.
      */
     @Test
@@ -110,14 +110,14 @@ class ItemTest {
 
     /**
      * Test các setter chung của Item.
-     *
+     * <p>
      * Các setter này gồm:
      * - setName()
      * - setDescription()
      * - setImageUrl()
      * - setStartingPrice()
      * - setYearCreated()
-     *
+     * <p>
      * Mục tiêu:
      * kiểm tra sau khi gọi setter, getter trả về giá trị mới.
      */
@@ -151,22 +151,22 @@ class ItemTest {
 
     /**
      * Test setStatus().
-     *
+     * <p>
      * Expected đúng:
      * item ban đầu ACTIVE
      * gọi setStatus(ItemStatus.SOLD hoặc status khác)
      * getStatus() phải trả về status mới.
-     *
+     * <p>
      * Lưu ý:
      * Code Item.java hiện tại đang có bug:
-     *
+     * <p>
      * public void setStatus(ItemStatus newStatus) {
      *     this.status = status;
      * }
-     *
+     * <p>
      * Đúng phải là:
      * this.status = newStatus;
-     *
+     * <p>
      * Vì vậy test này có thể fail cho đến khi bạn sửa Item.java.
      */
     @Test
@@ -192,12 +192,12 @@ class ItemTest {
 
     /**
      * Test constructor load từ DB của Item thông qua Electronics.
-     *
+     * <p>
      * Constructor DB nhận sẵn:
      * - id
      * - status
      * - createdAt
-     *
+     * <p>
      * Mục tiêu:
      * kiểm tra object load từ DB giữ đúng dữ liệu.
      */

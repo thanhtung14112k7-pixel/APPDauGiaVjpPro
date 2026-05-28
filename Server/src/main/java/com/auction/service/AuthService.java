@@ -3,15 +3,21 @@ package com.auction.service;
 import com.auction.dao.UserDAO;
 import com.auction.dao.impl.UserDAOImpl;
 import com.auction.enums.UserRole;
+import com.auction.enums.UserStatus;
 import com.auction.exception.AuthenticationException;
 import com.auction.exception.AuthErrorCode;
 import com.auction.dto.*;
 import com.auction.manage.UserManage;
 import com.auction.models.User.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Optional;
 
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private final UserManage userManage = UserManage.getInstance();
     private final UserDAO userDAO = new UserDAOImpl(); // Tích hợp DAO
 
@@ -44,6 +50,11 @@ public class AuthService {
             throw new AuthenticationException(AuthErrorCode.ROLE_INVALID);
         }
 
+        // Chỉ cho tạo role Bidder, Seller
+        if (role == UserRole.ADMIN) {
+            throw new AuthenticationException(AuthErrorCode.ROLE_INVALID);
+        }
+
         // Kiểm tra trùng username trong database.
         if (userDAO.findByUsername(username).isPresent()) {
             throw new AuthenticationException(AuthErrorCode.USERNAME_ALREADY_EXISTS);
@@ -57,13 +68,19 @@ public class AuthService {
         // Tạo object User theo đúng role.
         // BIDDER -> Bidder
         // SELLER -> Seller
-        // ADMIN  -> Admin
         User newUser = UserFactory.createUser(role, username, email, password);
 
-        // Lưu database trước.
-        // Nếu DB lỗi thì không đưa user vào RAM.
-        boolean isSaved = userDAO.insertUser(newUser);
-        if (!isSaved) {
+        // 🔥 SỬA TẠI ĐÂY: Chủ động quản lý kết nối ngắn hạn bằng try-with-resources trước khi đưa xuống DAO
+        try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
+
+            // Truyền đối tượng conn đã mở vào hàm insertUser theo đúng kiến trúc đồng bộ
+            boolean isSaved = userDAO.insertUser(conn, newUser);
+            if (!isSaved) {
+                throw new AuthenticationException(AuthErrorCode.REGISTRATION_FAILED);
+            }
+
+        } catch (SQLException e) {
+            // Hứng lỗi hạ tầng từ DAO ném lên và bọc lót bằng mã lỗi nghiệp vụ rõ ràng
             throw new AuthenticationException(AuthErrorCode.REGISTRATION_FAILED);
         }
 
@@ -95,10 +112,14 @@ public class AuthService {
                     ? userDAO.findByEmail(usernameOrEmail)
                     : userDAO.findByUsername(usernameOrEmail);
 
-            if (!userOpt.isPresent()) {
+            if (userOpt.isEmpty()) {
                 throw new AuthenticationException(AuthErrorCode.INVALID_CREDENTIALS);
             }
             user = userOpt.get();
+        }
+
+        if(user.getStatus() == UserStatus.BANNED) {
+            throw new AuthenticationException(AuthErrorCode.ACCOUNT_LOCKED);
         }
 
         // 2. Kiểm tra mật khẩu (Sử dụng BCrypt đã có trong User entity)
@@ -135,7 +156,7 @@ public class AuthService {
         User user = userManage.getUserById(userId);
 
         // Nếu RAM chưa có thì kiểm tra trong database.
-        if (user == null && !userDAO.findById(userId).isPresent()) {
+        if (user == null && userDAO.findById(userId).isEmpty()) {
             throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
         }
 

@@ -6,42 +6,36 @@ import com.auction.enums.UserRole;
 import com.auction.enums.UserStatus;
 import com.auction.models.User.*;
 
-
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class UserDAOImpl implements UserDAO {
 
+    // 🔥 SỬA: Nhận Connection từ ngoài truyền vào và ném SQLException lên Service điều phối
     @Override
-    public boolean insertUser(User user) {
-        // Dùng INSERT IGNORE hoặc kiểm tra trùng ở Service
-        String sql = "INSERT INTO users (id, user_type, username, email, password_hash, available_balance, frozen_balance, status) VALUES (?, ?, ?, ?, ?, ?, ?,?)";
+    public boolean insertUser(Connection conn, User user) throws SQLException {
+        String sql = "INSERT INTO users (id, user_type, username, email, password_hash, available_balance, frozen_balance, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
-        // try-with-resources: Tự động đóng connection sau khi chạy xong
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, user.getId());
-            stmt.setString(2, user.getUserRole().name()); // Lấy ENUM thành String
+            stmt.setString(2, user.getUserRole().name());
             stmt.setString(3, user.getUsername());
             stmt.setString(4, user.getEmail());
-            // Cần tạo hàm getHashedPassword() trong lớp User
             stmt.setString(5, user.getPassword());
             stmt.setDouble(6, user.getAvailableBalance());
             stmt.setDouble(7, user.getFrozenBalance());
             stmt.setString(8, user.getStatus().name());
 
-            int rowsAffected = stmt.executeUpdate();
-            return rowsAffected > 0;
-
-        } catch (SQLException e) {
-            System.err.println("Lỗi Insert User: " + e.getMessage());
-            return false;
+            return stmt.executeUpdate() > 0;
         }
     }
 
+    /**
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
+     */
     @Override
     public Optional<User> findById(String id) {
         String sql = "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL";
@@ -57,11 +51,51 @@ public class UserDAOImpl implements UserDAO {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Lỗi Find By ID: " + e.getMessage());
+            System.err.println("❌ Lỗi Find By ID: " + e.getMessage());
         }
         return Optional.empty();
     }
 
+    /**
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
+     */
+    @Override
+    public java.util.Map<String, String> findUsernamesByIds(List<String> ids) {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+
+        if (ids == null || ids.isEmpty()) {
+            return map;
+        }
+
+        String placeholders = ids.stream()
+                .map(id -> "?")
+                .collect(Collectors.joining(", "));
+
+        String sql = "SELECT id, username FROM users WHERE id IN (" + placeholders + ") AND deleted_at IS NULL";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            for (int i = 0; i < ids.size(); i++) {
+                stmt.setString(i + 1, ids.get(i));
+            }
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String userId = rs.getString("id");
+                    String username = rs.getString("username");
+                    map.put(userId, username);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Lỗi Batch Fetching Usernames tại UserDAOImpl: " + e.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
+     */
     @Override
     public Optional<User> findByUsername(String username) {
         String sql = "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL";
@@ -77,11 +111,14 @@ public class UserDAOImpl implements UserDAO {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Lỗi Find By Username: " + e.getMessage());
+            System.err.println("❌ Lỗi Find By Username: " + e.getMessage());
         }
         return Optional.empty();
     }
 
+    /**
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
+     */
     @Override
     public Optional<User> findByEmail(String email) {
         String sql = "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL";
@@ -97,183 +134,114 @@ public class UserDAOImpl implements UserDAO {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Lỗi Find By Email: " + e.getMessage());
+            System.err.println("❌ Lỗi Find By Email: " + e.getMessage());
         }
         return Optional.empty();
     }
 
-    // --- CÁC HÀM QUẢN LÝ TIỀN CHỐNG RACE CONDITION ---
+    // --- CÁC HÀM QUẢN LÝ TIỀN CHỐNG RACE CONDITION (ĐÃ THROWS SẴN) ---
 
-    /**
-     * Đóng băng tiền: Trừ khả dụng, cộng vào đóng băng.
-     * Chỉ thực hiện nếu số dư khả dụng ĐỦ (WHERE available_balance >= amount)
-     */
-    public boolean freezeMoney(String userId, double amount) {
+    @Override
+    public boolean freezeMoney(Connection conn, String userId, double amount) throws SQLException {
         String sql = "UPDATE users SET available_balance = available_balance - ?, " +
                 "frozen_balance = frozen_balance + ? " +
                 "WHERE id = ? AND available_balance >= ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setDouble(1, amount);
             stmt.setDouble(2, amount);
             stmt.setString(3, userId);
             stmt.setDouble(4, amount);
 
             return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            return false;
         }
     }
 
-    /**
-     * Giải phóng tiền: Trả tiền từ đóng băng về lại khả dụng (khi bị outbid)
-     */
-    public void unfreezeMoney(String userId, double amount) {
+    @Override
+    public void unfreezeMoney(Connection conn, String userId, double amount) throws SQLException {
         String sql = "UPDATE users SET available_balance = available_balance + ?, " +
                 "frozen_balance = frozen_balance - ? " +
                 "WHERE id = ? AND frozen_balance >= ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setDouble(1, amount);
             stmt.setDouble(2, amount);
             stmt.setString(3, userId);
             stmt.setDouble(4, amount);
 
             stmt.executeUpdate();
-        } catch (SQLException e) {
         }
     }
 
-    /**
-     * Khấu trừ tiền: Xóa hẳn tiền trong cột đóng băng (Khi thắng đấu giá)
-     */
-    public boolean deductFrozenMoney(String userId, double amount) {
+    @Override
+    public boolean deductFrozenMoney(Connection conn, String userId, double amount) throws SQLException {
         String sql = "UPDATE users SET frozen_balance = frozen_balance - ? " +
                 "WHERE id = ? AND frozen_balance >= ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setDouble(1, amount);
             stmt.setString(2, userId);
             stmt.setDouble(3, amount);
 
             return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            return false;
         }
     }
 
-    /**
-     * Nạp tiền: Cộng thẳng vào khả dụng
-     */
-    public boolean addAvailableBalance(String userId, double amount) {
+    @Override
+    public boolean addAvailableBalance(Connection conn, String userId, double amount) throws SQLException {
         String sql = "UPDATE users SET available_balance = available_balance + ? " +
                 "WHERE id = ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setDouble(1, amount);
             stmt.setString(2, userId);
 
             return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            return false;
         }
     }
 
-    /**
-     * Rút tiền: Trừ thẳng vào số dư khả dụng (Available Balance)
-     * BẢO VỆ NGHIỆP VỤ: Chỉ trừ tiền nếu số tiền khả dụng hiện tại ĐỦ (available_balance >= amount)
-     */
+    // 🔥 SỬA: Nhận Connection từ ngoài truyền vào để bọc vào Transaction quản lý tài chính chung, ném SQLException lên Service
     @Override
-    public boolean withdrawAvailableBalance(String userId, double amount) {
+    public boolean withdrawAvailableBalance(Connection conn, String userId, double amount) throws SQLException {
         String sql = "UPDATE users SET available_balance = available_balance - ? " +
                 "WHERE id = ? AND available_balance >= ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setDouble(1, amount);
             stmt.setString(2, userId);
-            stmt.setDouble(3, amount); // Tham số kiểm tra điều kiện WHERE
+            stmt.setDouble(3, amount);
 
-            int rowsAffected = stmt.executeUpdate();
-            return rowsAffected > 0; // Trả về true nếu trừ tiền thành công
-        } catch (SQLException e) {
-            System.err.println("❌ Lỗi Rút tiền tại UserDAOImpl: " + e.getMessage());
-            return false;
+            return stmt.executeUpdate() > 0;
         }
     }
 
-    /**
-     * Thêm người dùng vào danh sách phiên đấu giá mà họ đang theo dõi
-     * Lưu vào bảng trung gian: bidder_joined_auctions
-     *
-     * @param userId ID của bidder
-     * @param auctionId ID của phiên đấu giá
-     * @return true nếu thêm thành công, false nếu thất bại (vd: trùng lặp)
-     */
+    // 🔥 SỬA: Loại bỏ khối try-catch, ném SQLException ra ngoài Service bọc lót Transaction
     @Override
-    public boolean addJoinedAuction(String userId, String auctionId) {
+    public boolean addJoinedAuction(Connection conn, String userId, String auctionId) throws SQLException {
         String sql = "INSERT INTO bidder_joined_auctions (user_id, auction_id) VALUES (?, ?)";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, userId);
             stmt.setString(2, auctionId);
 
-            int rowsAffected = stmt.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("[UserDAO] ✅ Bidder " + userId + " joined auction " + auctionId);
-            }
-            return rowsAffected > 0;
-
-        } catch (SQLException e) {
-            // Có thể bị lỗi KEY_DUPLICATE nếu bidder đã join rồi (ignore)
-            if (e.getErrorCode() == 1062 || e.getErrorCode() == 1586) {
-                System.out.println("[UserDAO] ℹ️ Bidder " + userId + " đã join auction " + auctionId + " rồi");
-                return false;
-            }
-            System.err.println("[UserDAO] ❌ Lỗi Add Joined Auction: " + e.getMessage());
-            return false;
+            return stmt.executeUpdate() > 0;
         }
     }
 
-    /**
-     * Xóa người dùng khỏi danh sách phiên đấu giá
-     * Xóa từ bảng trung gian: bidder_joined_auctions
-     *
-     * @param userId ID của bidder
-     * @param auctionId ID của phiên đấu giá
-     * @return true nếu xóa thành công, false nếu không tìm thấy record
-     */
+    // 🔥 SỬA: Nhận Connection từ ngoài truyền vào, loại bỏ khối try-catch, ném SQLException lên trên
     @Override
-    public void removeJoinedAuction(String userId, String auctionId) {
+    public void removeJoinedAuction(Connection conn, String userId, String auctionId) throws SQLException {
         String sql = "DELETE FROM bidder_joined_auctions WHERE user_id = ? AND auction_id = ?";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, userId);
             stmt.setString(2, auctionId);
-
-            int rowsAffected = stmt.executeUpdate();
-            if (rowsAffected > 0) {
-                System.out.println("[UserDAO] ✅ Bidder " + userId + " left auction " + auctionId);
-            } else {
-                System.out.println("[UserDAO] ℹ️ Record không tồn tại: " + userId + " - " + auctionId);
-            }
-
-        } catch (SQLException e) {
-            System.err.println("[UserDAO] ❌ Lỗi Remove Joined Auction: " + e.getMessage());
+            stmt.executeUpdate();
         }
     }
 
     /**
-     * Lấy danh sách người dùng theo dạng phân trang (Pagination) để chống quá tải hệ thống
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
      */
     @Override
     public List<User> findPaginated(int limit, int offset) {
@@ -297,36 +265,29 @@ public class UserDAOImpl implements UserDAO {
         return users;
     }
 
+    // 🔥 SỬA: Nhận Connection từ ngoài truyền vào (để bọc lót Transaction cưỡng chế Kick/Ban từ Admin), ném SQLException ra ngoài
     @Override
-    public boolean updateStatus(String userId, String name) {
-        // Câu lệnh SQL cập nhật cột status dựa trên ID người dùng
+    public boolean updateStatus(Connection conn, String userId, String name) throws SQLException {
         String sql = "UPDATE users SET status = ? WHERE id = ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            // Tham số 'name' ở đây chính là chuỗi đại diện cho trạng thái (ví dụ: "BANNED", "SUSPENDED", "ACTIVE")
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, name);
             stmt.setString(2, userId);
 
-            int rowsAffected = stmt.executeUpdate();
-            return rowsAffected > 0; // Trả về true nếu cập nhật thành công ít nhất 1 dòng
-
-        } catch (SQLException e) {
-            System.err.println("❌ Lỗi Update Status tại UserDAOImpl: " + e.getMessage());
-            return false;
+            return stmt.executeUpdate() > 0;
         }
     }
 
-    // --- CÁC HÀM TRUY VẤN ---
-
+    /**
+     * Helper Method: Ánh xạ dữ liệu từ SQL sang Object Java
+     * Hàm này giữ nguyên throws外 lý sẵn rất sạch sẽ
+     */
     private User mapResultSetToUser(ResultSet rs) throws SQLException {
         String id = rs.getString("id");
         String username = rs.getString("username");
         String email = rs.getString("email");
         String passwordHash = rs.getString("password_hash");
 
-        // Đọc 2 cột mới
         double available = rs.getDouble("available_balance");
         double frozen = rs.getDouble("frozen_balance");
 

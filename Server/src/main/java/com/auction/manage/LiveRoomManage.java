@@ -289,6 +289,8 @@ public class LiveRoomManage implements AuctionObserver {
             if (room == null) room = new CopyOnWriteArrayList<>();
             if (!room.contains(clientSession)) {
                 room.add(clientSession);
+                // 🔥 VÁ LỖI TẠI ĐÂY: Ghi dấu phòng trực tuyến vào cấu trúc Session của Client
+                clientSession.setCurrentAuctionId(auctionId);
                 System.out.println("[LiveRoom] ✅ Client JOIN phiên " + auctionId);
             }
             return room; // Trả list đã update ngược lại vào Map
@@ -306,6 +308,8 @@ public class LiveRoomManage implements AuctionObserver {
         // Tính toán lại giá trị của phòng này trong trạng thái khóa an toàn
         rooms.computeIfPresent(auctionId, (key, room) -> {
             room.remove(clientSession);
+            // 🔥 VÁ LỖI TẠI ĐÂY: Giải phóng con trỏ phòng trực tuyến của Client về null
+            clientSession.setCurrentAuctionId(null);
             System.out.println("[LiveRoom] ❌ Client LEAVE phiên " + auctionId);
 
             // Nếu List rỗng, trả về null -> ConcurrentHashMap sẽ TỰ ĐỘNG XÓA key này!

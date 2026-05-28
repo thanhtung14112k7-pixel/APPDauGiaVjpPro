@@ -13,7 +13,9 @@ public class DatabaseConnection {
 
     private static final String DEFAULT_JDBC_URL = "jdbc:mysql://localhost:3306/vnu_auction_system";
     private static final String DEFAULT_USERNAME = "root";
-    private static final String DEFAULT_PASSWORD = "Son22092007@";
+
+    // 🔥 SỬA TẠI ĐÂY: Xóa hoàn toàn mật khẩu thật, ép buộc sử dụng chuỗi rỗng mặc định của MySQL local
+    private static final String DEFAULT_PASSWORD = "";
     private static final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
 
     private DatabaseConnection() {} // Anti-instantiation
@@ -129,6 +131,7 @@ public class DatabaseConnection {
     }
 
     private static String resolveDbPassword() {
+        // 🔥 SỬA TẠI ĐÂY: Nếu file .env không khai báo, hệ thống lấy DEFAULT_PASSWORD là rỗng ("")
         return firstNonBlank(
                 dotenv.get("AUCTION_DB_PASSWORD"),
                 dotenv.get("DB_PASSWORD"),

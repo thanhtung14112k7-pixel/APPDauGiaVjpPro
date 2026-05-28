@@ -2,10 +2,13 @@ package com.auction.dao;
 
 import com.auction.models.Auction.BidTransaction;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 
 public interface BidTransactionDAO {
-    boolean insertBid(BidTransaction bid);
+
+    boolean insertBid(Connection conn, BidTransaction bid) throws SQLException;
 
     List<BidTransaction> findTopByAuctionId(String auctionId, int limit);
 
@@ -18,5 +21,5 @@ public interface BidTransactionDAO {
     long getTotalBidCountByBidder(String bidderId);
 
     // Thêm hàm này vào BidTransactionDAOImpl để chuyển trạng thái bid cũ
-    void updateStatusToRefunded(String auctionId, String bidderId);
+    void updateStatusToRefunded(Connection conn, String auctionId, String bidderId) throws SQLException;
 }

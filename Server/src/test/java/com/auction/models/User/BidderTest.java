@@ -14,13 +14,13 @@ class BidderTest {
 
     /**
      * Test constructor đăng ký mới của Bidder.
-     *
+     * <p>
      * Trong Bidder.java, constructor:
      * public Bidder(String username, String email, String password)
-     *
+     * <p>
      * sẽ gọi:
      * super(username, email, password, UserRole.BIDDER);
-     *
+     * <p>
      * Vì vậy Bidder mới tạo phải có role là BIDDER.
      */
     @Test
@@ -40,10 +40,10 @@ class BidderTest {
 
     /**
      * Test joinedAuctionIds ban đầu.
-     *
+     * <p>
      * Trong constructor Bidder, code có:
      * this.joinedAuctionIds = new ArrayList<>();
-     *
+     * <p>
      * Vì vậy bidder mới tạo chưa tham gia auction nào,
      * danh sách joinedAuctionIds phải rỗng.
      */
@@ -61,7 +61,7 @@ class BidderTest {
 
     /**
      * Test addJoinedAuction() khi auctionId chưa tồn tại.
-     *
+     * <p>
      * Trong Bidder.java:
      * nếu joinedAuctionIds chưa chứa auctionId,
      * method sẽ add vào list và return true.
@@ -86,9 +86,9 @@ class BidderTest {
 
     /**
      * Test addJoinedAuction() khi auctionId đã tồn tại.
-     *
+     * <p>
      * Bidder không nên lưu trùng cùng một auctionId.
-     *
+     * <p>
      * Case:
      * add auction-1 lần 1 => true
      * add auction-1 lần 2 => false
@@ -113,15 +113,15 @@ class BidderTest {
 
         // Danh sách không được bị thêm trùng
         assertEquals(1, bidder.getJoinedAuctionIds().size());
-        assertEquals("auction-1", bidder.getJoinedAuctionIds().get(0));
+        assertEquals("auction-1", bidder.getJoinedAuctionIds().getFirst());
     }
 
     /**
      * Test removeJoinedAuction() khi auctionId tồn tại.
-     *
+     * <p>
      * Trong Bidder.java:
      * return joinedAuctionIds.remove(auctionId);
-     *
+     * <p>
      * Nếu auctionId có trong list, remove thành công và trả về true.
      */
     @Test
@@ -147,7 +147,7 @@ class BidderTest {
 
     /**
      * Test removeJoinedAuction() khi auctionId không tồn tại.
-     *
+     * <p>
      * Nếu auctionId không có trong list,
      * remove sẽ không xóa được gì và trả về false.
      */
@@ -168,10 +168,10 @@ class BidderTest {
 
     /**
      * Test getJoinedAuctionIds().
-     *
+     * <p>
      * Trong Bidder.java, method này trả về:
      * Collections.unmodifiableList(joinedAuctionIds)
-     *
+     * <p>
      * Ý nghĩa:
      * code bên ngoài chỉ được đọc danh sách,
      * không được sửa trực tiếp danh sách nội bộ của Bidder.
@@ -190,16 +190,14 @@ class BidderTest {
         List<String> joinedAuctionIds = bidder.getJoinedAuctionIds();
 
         // Vì list là unmodifiable, add trực tiếp phải ném UnsupportedOperationException
-        assertThrows(UnsupportedOperationException.class, () -> {
-            joinedAuctionIds.add("auction-2");
-        });
+        assertThrows(UnsupportedOperationException.class, () -> joinedAuctionIds.add("auction-2"));
     }
 
     /**
      * Test setJoinedAuctionIds().
-     *
+     * <p>
      * Method này dành cho DAO bơm dữ liệu từ database lên object Bidder.
-     *
+     * <p>
      * Case:
      * DB trả về auction-1, auction-2
      * gọi setJoinedAuctionIds(...)
@@ -226,13 +224,13 @@ class BidderTest {
 
     /**
      * Test setJoinedAuctionIds() có copy list đầu vào hay không.
-     *
+     * <p>
      * Trong Bidder.java:
      * this.joinedAuctionIds = new ArrayList<>(idsFromDB);
-     *
+     * <p>
      * Nghĩa là Bidder tạo một list mới,
      * không dùng trực tiếp list bên ngoài.
-     *
+     * <p>
      * Vì vậy sau khi set xong, nếu list gốc bị sửa,
      * dữ liệu trong Bidder không được thay đổi theo.
      */
@@ -259,11 +257,11 @@ class BidderTest {
 
     /**
      * Test constructor thứ 2 của Bidder: constructor load từ DB.
-     *
+     * <p>
      * Constructor này nhận:
      * id, username, email, password, role, availableBalance,
      * frozenBalance, status, createdAt, updatedAt.
-     *
+     * <p>
      * Mục tiêu:
      * kiểm tra object load từ DB có giữ đúng dữ liệu hay không.
      */

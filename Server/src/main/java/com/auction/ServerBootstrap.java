@@ -88,7 +88,7 @@ public class ServerBootstrap {
      */
     private void setupSystemTimezone() {
         System.out.println("[Bootstrap] 0. Thiết lập cấu hình múi giờ chuẩn hệ thống (Asia/Ho_Chi_Minh)...");
-        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ha_Noi"));
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
     }
 
     /**

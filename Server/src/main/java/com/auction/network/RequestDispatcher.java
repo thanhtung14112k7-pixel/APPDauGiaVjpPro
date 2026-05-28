@@ -25,6 +25,8 @@ import java.util.concurrent.Executors;
  * - Trả kết quả về Client bằng SocketResponse.
  */
 public class RequestDispatcher {
+    // 🔥 TỐI ƯU 1: Áp dụng Singleton Pattern (Double-checked locking) bảo vệ luồng khởi tạo
+    private static volatile RequestDispatcher instance;
     private final Gson gson = new Gson();
 
     private final AuthController authController = new AuthController();
@@ -32,18 +34,32 @@ public class RequestDispatcher {
     private final ItemController itemController = new ItemController();
     private final AuthorizationService authorizationService = new AuthorizationService();
 
-    // 🔥 TỐI ƯU HIỆU NĂNG NHÁNH: Tạo Thread Pool riêng chuyên trách các tác vụ nặng (Database, Synchronized Block).
-    // Giúp giải phóng ngay lập tức Luồng Mạng của ClientHandler quay lại đọc luồng byte tiếp theo.
-    private final ExecutorService workerPool = Executors.newFixedThreadPool(16);
+    // Chuyển Constructor về private để cấm các class khác tự tiện "new"
+    private RequestDispatcher() {
+        System.out.println("[RequestDispatcher] 🚀 Khởi tạo trung tâm điều phối và Thread Pool dùng chung.");
+    }
 
+    public static RequestDispatcher getInstance() {
+        RequestDispatcher temp = instance;
+        if (temp == null) {
+            synchronized (RequestDispatcher.class) {
+                temp = instance;
+                if (temp == null) {
+                    temp = instance = new RequestDispatcher();
+                }
+            }
+        }
+        return temp;
+    }
     /**
      * Điểm vào chính khi Server nhận được một dòng JSON từ Client.
      */
     public void processRequest(String requestJson, ClientSession session) {
-        // 🔥 ĐẨY SANG LUỒNG WORKER BẤT ĐỒNG BỘ: Chặn đứng nguy cơ nghẽn hàng đợi mạng của từng Client đơn lẻ
-        workerPool.submit(() -> {
+        // 🔥 THAY ĐỔI CHIẾN LƯỢC TOÀN DIỆN: Mượn hàng đợi đơn luồng của chính Session này để xử lý
+        // Request LOGIN gửi trước sẽ vào hàng đợi trước, LIVE_ENTERED gửi sau bắt buộc phải xếp hàng đứng đợi sau,
+        // Triệt hạ hoàn toàn lỗi Race Condition đảo lộn thứ tự hành động mạng!
+        session.getSessionExecutor().submit(() -> {
             SocketRequest socketRequest = null;
-
             try {
                 socketRequest = gson.fromJson(requestJson, SocketRequest.class);
 

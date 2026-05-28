@@ -13,11 +13,11 @@ class ArtTest {
 
     /**
      * Test constructor tạo mới của Art.
-     *
+     * <p>
      * Art có 2 field riêng:
      * - painter
      * - artStyle
-     *
+     * <p>
      * Constructor Art tự truyền ItemType.ART lên class cha Item.
      */
     @Test
@@ -45,7 +45,7 @@ class ArtTest {
 
     /**
      * Test setter riêng của Art.
-     *
+     * <p>
      * Các setter riêng:
      * - setPainter()
      * - setArtStyle()
@@ -74,7 +74,7 @@ class ArtTest {
 
     /**
      * Test constructor load từ DB của Art.
-     *
+     * <p>
      * Constructor DB nhận id, status, createdAt
      * và các field riêng của Art.
      */
@@ -116,7 +116,7 @@ class ArtTest {
 
     /**
      * Test getInfo() của Art.
-     *
+     * <p>
      * getInfo() trả về chuỗi mô tả gồm:
      * - [Nghệ thuật]
      * - Tên

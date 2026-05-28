@@ -24,7 +24,7 @@ public class ClientHandler implements Runnable {
 
     public ClientHandler(Socket socket) {
         this.socket = socket;
-        this.dispatcher = new RequestDispatcher();
+        this.dispatcher = RequestDispatcher.getInstance();
     }
 
     @Override

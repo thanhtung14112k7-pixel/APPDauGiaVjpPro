@@ -14,7 +14,6 @@ package com.auction.network;
  */
 
 import com.auction.enums.UserRole;
-import com.auction.exception.AuthenticationException;
 import com.auction.manage.ConnectionManage;
 import com.auction.manage.LiveRoomManage;
 import com.auction.manage.UserManage;
@@ -22,6 +21,8 @@ import com.auction.manage.UserManage;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ClientSession {
     private String userId; // Ban đầu null, sau khi login mới có giá trị
@@ -29,12 +30,25 @@ public class ClientSession {
     private String username;     // 🔥 Bổ sung để hiển thị log/thông báo
     private String currentAuctionId; // 🔥 Bổ sung: ID phiên đấu giá client đang xem trực tuyến
 
+    // 🔥 TỐI ƯU 1: Cờ hiệu kiểm soát Idempotent chống dọn dẹp trùng lặp.
+    // Sử dụng volatile để đảm bảo tính hiển thị ngay lập tức giữa các luồng xử lý song song.
+    private volatile boolean closed = false;
+
+    // 🔥 TỐI ƯU KIẾN TRÚC: Mỗi Client khi kết nối vào sẽ được cấp riêng một hàng đợi tuần tự (Single Thread Executor)
+    // Đảm bảo tất cả các Request do chính Client này bấm nút gửi lên sẽ bắt buộc phải xếp hàng chạy theo đúng thứ tự thời gian.
+    private final ExecutorService sessionExecutor = Executors.newSingleThreadExecutor();
+
     private final Socket socket;
     private final PrintWriter out;
 
     public ClientSession(Socket socket, PrintWriter out) {
         this.socket = socket;
         this.out = out;
+    }
+
+    // 🔥 Getter để RequestDispatcher có thể mượn hàng đợi của Session xử lý
+    public ExecutorService getSessionExecutor() {
+        return this.sessionExecutor;
     }
 
     public String getUserId() { return userId; }
@@ -63,34 +77,65 @@ public class ClientSession {
     }
 
     /**
-     * 🔥 HÀM ĐÓNG KẾT NỐI AN TOÀN KHI CÓ SỰ CỐ ĐỨT MẠNG
+     * 🔥 HÀM ĐÓNG KẾT NỐI AN TOÀN KHI CÓ SỰ CỐ ĐỨT MẠNG (Đạt chuẩn Idempotent & Chống rò rỉ)
      * Tự động dọn dẹp sạch sẽ dấu vết của Client trên RAM Server
      */
-    public void close() throws AuthenticationException {
-        // 1. Dọn dẹp trên các Manager hệ thống trước khi hủy Socket
-        if (userId != null) {
-            // Xóa thiết bị này khỏi danh sách quản lý kết nối online
-            ConnectionManage.getInstance().removeConnection(userId, this);
-
-            // 🔥 THÊM MỚI ĐỒNG BỘ: Nếu thiết bị này tắt đi và user không còn máy nào online khác
-            if (!ConnectionManage.getInstance().isUserOnline(userId)) {
-                // Trục xuất luôn thông tin User khỏi RAM UserManage để chống tràn bộ nhớ
-                UserManage.getInstance().deleteUser(userId);
-            }
-
-            // Nếu đang xem một phòng đấu giá trực tuyến, ép out khỏi phòng real-time đó luôn
-            if (currentAuctionId != null) {
-                LiveRoomManage.getInstance().leaveRoom(currentAuctionId, this);
-            }
+    public void close() {
+        // CHỐT CHẶN 1: Nếu đã đóng rồi thì lập tức quay xe, không xử lý dọn dẹp lại nữa
+        if (closed) {
+            return;
         }
 
-        // 2. Đóng luồng mạng vật lý công khai
+        // Đặt khối synchronized ngắn hạn để đảm bảo chỉ duy nhất một luồng được quyền đóng mốc đầu tiên
+        synchronized (this) {
+            if (closed) return;
+            closed = true; // Đóng dấu chủ quyền: Session này chính thức ngừng hoạt động
+        }
+
+        System.out.println("[Network Guard] ⏳ Tiến hành đóng kết nối Idempotent cho User: " + username);
+
+        // 🔥 TỐI ƯU 2: B bọc toàn bộ luồng nghiệp vụ dọn dẹp bộ nhớ và ngắt Socket vào try/finally
         try {
-            if (out != null) out.close();
-            if (socket != null && !socket.isClosed()) socket.close();
-            System.out.println("Network: Đã đóng Socket và giải phóng tài nguyên an toàn.");
-        } catch (IOException e) {
-            System.err.println("❌ Lỗi khi đóng Socket vật lý: " + e.getMessage());
+            // 1. Dọn dẹp logic trên các RAM Manager hệ thống
+            if (userId != null) {
+                ConnectionManage.getInstance().removeConnection(userId, this);
+
+                if (!ConnectionManage.getInstance().isUserOnline(userId)) {
+                    UserManage.getInstance().deleteUser(userId);
+                }
+
+                if (currentAuctionId != null) {
+                    LiveRoomManage.getInstance().leaveRoom(currentAuctionId, this);
+                }
+            }
+        } catch (Exception e) {
+            // Cô lập lỗi logic: Nếu dọn dẹp RAM bị crash, in lỗi ra log chứ không được phép làm nghẽn luồng hạ cánh Socket
+            System.err.println("[Network Guard] ⚠️ Có gợn lỗi khi dọn dẹp RAM: " + e.getMessage());
+        } finally {
+
+            // 🔥 CHỐT CHẶN TỐI CAO TRONG FINALLY: Bắt buộc luôn luôn được thực thi kể cả khi đoạn code trên bị sập!
+            // Đảm bảo hàng đợi đơn luồng và Socket vật lý PHẢI ĐƯỢC GIẢI PHÓNG TRONG MỌI HOÀN CẢNH.
+            this.sessionExecutor.shutdown();
+
+            try {
+                if (out != null) {
+                    out.close();
+                }
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                }
+                System.out.println("[Network Guard] ✅ Đã giải phóng hoàn toàn hạ tầng Socket vật lý và Executor.");
+            } catch (IOException ex) {
+                System.err.println("[Network Guard] ❌ Lỗi khi dập phích cắm Socket: " + ex.getMessage());
+            }
         }
+    }
+
+    public String getUsername() {
+        return this.username;
+    }
+
+    public void setCurrentAuctionId(String currentAuctionId) {
+        this.currentAuctionId = currentAuctionId;
     }
 }

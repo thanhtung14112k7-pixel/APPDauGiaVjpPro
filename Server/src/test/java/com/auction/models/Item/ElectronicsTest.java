@@ -12,11 +12,11 @@ class ElectronicsTest {
 
     /**
      * Test constructor tạo mới của Electronics.
-     *
+     * <p>
      * Electronics có 2 field riêng:
      * - brand
      * - warrantyMonths
-     *
+     * <p>
      * Đồng thời constructor Electronics tự truyền ItemType.ELECTRONICS
      * lên constructor của Item.
      */
@@ -45,7 +45,7 @@ class ElectronicsTest {
 
     /**
      * Test setter riêng của Electronics.
-     *
+     * <p>
      * Các setter riêng:
      * - setBrand()
      * - setWarrantyMonths()
@@ -74,7 +74,7 @@ class ElectronicsTest {
 
     /**
      * Test constructor load từ DB của Electronics.
-     *
+     * <p>
      * Constructor DB nhận id, status, createdAt
      * và các field riêng của Electronics.
      */
@@ -116,7 +116,7 @@ class ElectronicsTest {
 
     /**
      * Test getInfo() của Electronics.
-     *
+     * <p>
      * getInfo() trả về chuỗi mô tả gồm:
      * - [Điện tử]
      * - Tên
@@ -125,7 +125,7 @@ class ElectronicsTest {
      * - Thời gian bảo hành
      * - Giá khởi điểm
      * - Trạng thái
-     *
+     * <p>
      * Ta không cần so sánh nguyên chuỗi vì có format tiền.
      * Chỉ cần kiểm tra chuỗi có chứa các thông tin quan trọng.
      */

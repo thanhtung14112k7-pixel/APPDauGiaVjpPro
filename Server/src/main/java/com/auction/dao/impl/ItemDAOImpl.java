@@ -12,14 +12,14 @@ import java.util.Optional;
 
 public class ItemDAOImpl implements ItemDAO {
 
+    // 🔥 SỬA: Nhận Connection từ ngoài truyền vào (giống các DAO khác) và ném SQLException lên Service
     @Override
-    public boolean insertItem(Item item) {
+    public boolean insertItem(Connection conn, Item item) throws SQLException {
         String sql = "INSERT INTO items (id, item_type, seller_id, name, description, starting_price, year_created, image_url, status, " +
                 "painter, art_style, brand, warranty_months, model, km_age, license_plate, engine_type) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             // 1. Set các trường CHUNG (Common fields)
             stmt.setString(1, item.getId());
@@ -29,8 +29,6 @@ public class ItemDAOImpl implements ItemDAO {
             stmt.setString(5, item.getDescription());
             stmt.setDouble(6, item.getStartingPrice());
 
-            // 🔥 SỬA LỖI: Xử lý giá trị int có thể mang ý nghĩa NULL
-            // Quy ước: Nếu yearCreated <= 0, ta coi như chưa biết năm sáng tác -> Đẩy NULL xuống DB
             if (item.getYearCreated() > 0) {
                 stmt.setInt(7, item.getYearCreated());
             } else {
@@ -38,7 +36,7 @@ public class ItemDAOImpl implements ItemDAO {
             }
 
             stmt.setString(8, item.getImageUrl());
-            stmt.setString(9, item.getStatus() != null ? item.getStatus().name() : "ACTIVE"); // Dùng .name() thay vì .toString() cho an toàn với Enum
+            stmt.setString(9, item.getStatus() != null ? item.getStatus().name() : "ACTIVE");
 
             // 2. Set các trường ĐẶC THÙ (Khởi tạo toàn bộ bằng NULL trước)
             stmt.setNull(10, Types.VARCHAR); // painter
@@ -53,26 +51,20 @@ public class ItemDAOImpl implements ItemDAO {
             // 3. Phân loại theo instanceof để điền giá trị thật đè lên NULL
             switch (item) {
                 case Art art -> {
-                    // String có thể so sánh null bình thường
                     if (art.getPainter() != null) stmt.setString(10, art.getPainter());
                     if (art.getArtStyle() != null) stmt.setString(11, art.getArtStyle());
                 }
                 case Electronics elec -> {
                     if (elec.getBrand() != null) stmt.setString(12, elec.getBrand());
-
-                    // Quy ước: Nếu bảo hành <= 0 thì coi là không có thông tin (NULL)
                     if (elec.getWarrantyMonths() > 0) {
                         stmt.setInt(13, elec.getWarrantyMonths());
                     }
                 }
                 case Vehicle vehicle -> {
                     if (vehicle.getModel() != null) stmt.setString(14, vehicle.getModel());
-
-                    // kmAge là double, quy ước nếu < 0 thì coi là NULL
                     if (vehicle.getKmAge() >= 0) {
                         stmt.setDouble(15, vehicle.getKmAge());
                     }
-
                     if (vehicle.getLicensePlate() != null) stmt.setString(16, vehicle.getLicensePlate());
                     if (vehicle.getEngineType() != null) stmt.setString(17, vehicle.getEngineType());
                 }
@@ -81,13 +73,12 @@ public class ItemDAOImpl implements ItemDAO {
             }
 
             return stmt.executeUpdate() > 0;
-
-        } catch (SQLException e) {
-            System.err.println("Lỗi Insert Item: " + e.getMessage());
-            return false;
         }
     }
 
+    /**
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
+     */
     @Override
     public Optional<Item> findById(String id) {
         String sql = "SELECT * FROM items WHERE id = ? AND deleted_at IS NULL";
@@ -99,11 +90,14 @@ public class ItemDAOImpl implements ItemDAO {
                 if (rs.next()) return Optional.of(mapResultSetToItem(rs));
             }
         } catch (SQLException e) {
-            System.err.println("Lỗi Find Item: " + e.getMessage());
+            System.err.println("❌ Lỗi Find Item: " + e.getMessage());
         }
         return Optional.empty();
     }
 
+    /**
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
+     */
     @Override
     public List<Item> findBySellerId(String sellerId) {
         List<Item> items = new ArrayList<>();
@@ -118,38 +112,30 @@ public class ItemDAOImpl implements ItemDAO {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Lỗi Find Items by Seller: " + e.getMessage());
+            System.err.println("❌ Lỗi Find Items by Seller: " + e.getMessage());
         }
         return items;
     }
 
+    // 🔥 SỬA: Loại bỏ khối try-catch nuốt lỗi, ném trực tiếp lỗi ra ngoài Service phục vụ rollback chuỗi Transaction
     @Override
-    public boolean updateStatus(String itemId, String newStatus) {
+    public boolean updateStatus(Connection conn, String itemId, String newStatus) throws SQLException {
         String sql = "UPDATE items SET status = ? WHERE id = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, newStatus);
             stmt.setString(2, itemId);
             return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            System.err.println("Lỗi Update Item Status: " + e.getMessage());
-            return false;
         }
     }
 
-    /**
-     * 🔥 HÀM MỚI BỔ SUNG: Cập nhật toàn bộ thông tin sửa đổi của vật phẩm
-     * Lưu ý: Không cho phép sửa đổi 'item_type', 'seller_id' và 'id' để đảm bảo tính toàn vẹn hệ thống.
-     */
+    // 🔥 SỬA: Nhận Connection từ ngoài truyền vào và ném lỗi lên Service điều phối
     @Override
-    public boolean updateItem(Item item) {
+    public boolean updateItem(Connection conn, Item item) throws SQLException {
         String sql = "UPDATE items SET name = ?, description = ?, starting_price = ?, year_created = ?, image_url = ?, status = ?, " +
                 "painter = ?, art_style = ?, brand = ?, warranty_months = ?, model = ?, km_age = ?, license_plate = ?, engine_type = ? " +
                 "WHERE id = ? AND deleted_at IS NULL";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             // 1. Gán giá trị cho các trường thông tin CHUNG
             stmt.setString(1, item.getName());
@@ -198,27 +184,22 @@ public class ItemDAOImpl implements ItemDAO {
             stmt.setString(15, item.getId());
 
             return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            System.err.println("Lỗi Update Toàn Bộ Thông Tin Item: " + e.getMessage());
-            return false;
         }
     }
 
     /**
-     * 🔥 Helper method: Xử lý Đa hình (Polymorphism) Hydration
-     * Ánh xạ chính xác theo Constructor của Art, Electronics, Vehicle
+     * Helper method: Xử lý Đa hình (Polymorphism) Hydration
+     * Hàm này vốn dĩ đã throws SQLException sẵn nên giữ nguyên cấu trúc
      */
     private Item mapResultSetToItem(ResultSet rs) throws SQLException {
-        // 1. Đọc các trường CHUNG
         String id = rs.getString("id");
         String name = rs.getString("name");
         double startingPrice = rs.getDouble("starting_price");
         String description = rs.getString("description");
 
-        // 🔥 SỬA LỖI ĐỌC NULL: Đọc int, sau đó kiểm tra xem nó có thực sự là NULL trong DB không
         int yearCreated = rs.getInt("year_created");
         if (rs.wasNull()) {
-            yearCreated = 0; // Gán lại thành 0 (hoặc -1) nếu bạn muốn Model hiểu là "Không có năm"
+            yearCreated = 0;
         }
 
         String sellerId = rs.getString("seller_id");
@@ -227,7 +208,6 @@ public class ItemDAOImpl implements ItemDAO {
         java.time.LocalDateTime createdAt = rs.getTimestamp("created_at").toLocalDateTime();
         String typeStr = rs.getString("item_type");
 
-        // 2. Dựa vào TYPE để gọi constructor
         switch (typeStr) {
             case "ART":
                 String painter = rs.getString("painter");
@@ -237,7 +217,6 @@ public class ItemDAOImpl implements ItemDAO {
             case "ELECTRONICS":
                 String brand = rs.getString("brand");
 
-                // Khắc phục tương tự cho warrantyMonths
                 int warrantyMonths = rs.getInt("warranty_months");
                 if (rs.wasNull()) warrantyMonths = 0;
 
@@ -248,7 +227,6 @@ public class ItemDAOImpl implements ItemDAO {
                 String engineType = rs.getString("engine_type");
                 String licensePlate = rs.getString("license_plate");
 
-                // Khắc phục tương tự cho kmAge
                 double kmAge = rs.getDouble("km_age");
                 if (rs.wasNull()) kmAge = 0.0;
 

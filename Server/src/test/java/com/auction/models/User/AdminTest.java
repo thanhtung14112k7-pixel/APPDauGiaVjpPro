@@ -12,13 +12,13 @@ class AdminTest {
 
     /**
      * Test constructor đăng ký mới của Admin.
-     *
+     * <p>
      * Trong Admin.java, constructor:
      * public Admin(String username, String email, String password)
-     *
+     * <p>
      * gọi:
      * super(username, email, password, UserRole.ADMIN);
-     *
+     * <p>
      * Vì vậy Admin mới tạo phải có role ADMIN.
      */
     @Test
@@ -38,7 +38,7 @@ class AdminTest {
 
     /**
      * Test số dư ban đầu của Admin.
-     *
+     * <p>
      * Admin kế thừa User,
      * nên constructor User sẽ set:
      * availableBalance = 0
@@ -61,7 +61,7 @@ class AdminTest {
 
     /**
      * Test trạng thái mặc định của Admin mới.
-     *
+     * <p>
      * Vì Admin gọi constructor User,
      * mà User set status mặc định là ACTIVE.
      */
@@ -79,10 +79,10 @@ class AdminTest {
 
     /**
      * Test Admin dùng được setter status kế thừa từ User.
-     *
+     * <p>
      * Method setStatus() nằm trong User,
      * nhưng Admin là class con nên vẫn dùng được.
-     *
+     * <p>
      * Lưu ý:
      * Nếu UserStatus của bạn không có BANNED,
      * hãy đổi sang enum thật đang có trong project.
@@ -104,10 +104,10 @@ class AdminTest {
 
     /**
      * Test Admin dùng được các method balance kế thừa từ User.
-     *
+     * <p>
      * Dù nghiệp vụ thực tế Admin có thể không cần đấu giá,
      * nhưng vì Admin kế thừa User nên các method balance vẫn tồn tại.
-     *
+     * <p>
      * Test này kiểm tra kế thừa hoạt động ổn.
      */
     @Test
@@ -136,9 +136,9 @@ class AdminTest {
 
     /**
      * Test constructor thứ 2 của Admin: constructor load từ DB.
-     *
+     * <p>
      * Constructor này nhận dữ liệu đã có sẵn trong database.
-     *
+     * <p>
      * Mục tiêu:
      * đảm bảo Admin load từ DB giữ đúng username, email, password,
      * role, balance và status.

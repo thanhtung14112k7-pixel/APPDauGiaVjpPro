@@ -13,6 +13,8 @@ import com.auction.exception.ValidationException;
 import com.auction.manage.ProductManage;
 import com.auction.models.Item.*;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,14 +35,17 @@ public class ItemService {
             throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Missing type or parameter payload data.");
         }
 
-        try {
+        validateBasicItemData(data);
+
+        // 🔥 SỬA: Chủ động quản lý kết nối ngắn hạn để truyền vào hàm insertItem của DAO
+        try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
             data.put("id", UUID.randomUUID().toString());
             data.put("status", ItemStatus.ACTIVE);
             data.put("createdAt", LocalDateTime.now());
 
             Item newItem = ItemFactory.createItem(type, data);
 
-            boolean isSavedDB = itemDAO.insertItem(newItem);
+            boolean isSavedDB = itemDAO.insertItem(conn, newItem); // Truyền conn đã mở
             if (!isSavedDB) {
                 throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Persisting new item failed.");
             }
@@ -48,6 +53,9 @@ public class ItemService {
             return toItemDetailDTO(newItem);
         } catch (IllegalArgumentException e) {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Factory payload evaluation error: " + e.getMessage());
+        } catch (SQLException e) {
+            // Hứng lỗi SQLException từ tầng DAO ném lên để cô lập lỗi hạ tầng
+            throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Database transaction failed at addItem: " + e.getMessage());
         }
     }
 
@@ -56,20 +64,22 @@ public class ItemService {
     }
 
     public ItemDetailDTO updateItemInfo(String itemId, ItemType type, Map<String, Object> incomingData) {
-        if (itemId == null || type == null || incomingData == null) {
+        if (itemId == null || itemId.trim().isEmpty() || type == null || incomingData == null) {
             throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Invalid update request mapping criteria.");
         }
 
-        Item liveItem = getItemById(itemId);
-        if (liveItem == null) {
-            throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND);
-        }
+        validateBasicItemData(incomingData);
 
-        if (liveItem.getItemType() != type) {
-            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Mâu thuẫn loại vật phẩm. Không thể thay đổi loại của vật phẩm đang tồn tại.");
-        }
+        synchronized (itemId.trim().intern()) {
+            Item liveItem = getItemById(itemId);
+            if (liveItem == null) {
+                throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND);
+            }
 
-        synchronized (liveItem.getId().intern()) {
+            if (liveItem.getItemType() != type) {
+                throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Mâu thuẫn loại vật phẩm. Không thể thay đổi loại của vật phẩm đang tồn tại.");
+            }
+
             if (liveItem.getStatus() != ItemStatus.ACTIVE) {
                 throw new AuctionException(AuctionErrorCode.ITEM_IS_LOCKED);
             }
@@ -77,9 +87,14 @@ public class ItemService {
             validateMergedItemData(liveItem, type, incomingData);
             updateLiveItemFields(liveItem, incomingData);
 
-            boolean isUpdatedDB = itemDAO.updateItem(liveItem);
-            if (!isUpdatedDB) {
-                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Synchronizing modified item properties to store failed.");
+            // 🔥 SỬA: Chủ động mở kết nối an toàn để truyền vào hàm updateItem của DAO dưới khối synchronized
+            try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
+                boolean isUpdatedDB = itemDAO.updateItem(conn, liveItem); // Truyền conn đã mở
+                if (!isUpdatedDB) {
+                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Synchronizing modified item properties to store failed.");
+                }
+            } catch (SQLException e) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Database transaction failed at updateItemInfo: " + e.getMessage());
             }
 
             productManage.updateProduct(itemId, liveItem);
@@ -92,6 +107,7 @@ public class ItemService {
             throw new ValidationException(ValidationErrorCode.MISSING_REQUIRED_FIELD, "Seller identification constraint is empty.");
         }
 
+        // Luồng đọc (SELECT) danh sách độc lập, DAO tự mở connection ngắn hạn bên trong nên giữ nguyên vẹn
         List<Item> dbItems = itemDAO.findBySellerId(sellerId);
         List<ItemSummaryDTO> result = new ArrayList<>();
 
@@ -99,7 +115,9 @@ public class ItemService {
             Item ramItem = productManage.getProduct(item.getId());
 
             if (ramItem == null) {
-                productManage.addProduct(item);
+                if (item.getStatus() == ItemStatus.ACTIVE) {
+                    productManage.addProduct(item);
+                }
                 ramItem = item;
             }
 
@@ -130,16 +148,32 @@ public class ItemService {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Trường cập nhật trạng thái không hợp lệ.");
         }
 
-        boolean isUpdatedDB = itemDAO.updateStatus(itemId, newStatus.name());
-        if (!isUpdatedDB) {
-            throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to update item status.");
-        }
+        synchronized (itemId.trim().intern()) {
+            // Thân hàm try-with-resources của bạn vốn dĩ đã chuẩn 100% kiến trúc truyền conn từ trước!
+            try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
 
-        Item ramItem = productManage.getProduct(itemId);
-        if (ramItem == null) {
-            itemDAO.findById(itemId).ifPresent(productManage::addProduct);
-        } else {
-            ramItem.setStatus(newStatus);
+                boolean isUpdatedDB = itemDAO.updateStatus(conn, itemId, newStatus.name());
+                if (!isUpdatedDB) {
+                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to update item status.");
+                }
+
+            } catch (SQLException e) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Database link failed at updateItemStatus: " + e.getMessage());
+            }
+
+            Item ramItem = productManage.getProduct(itemId);
+            if (ramItem == null) {
+                if (newStatus == ItemStatus.ACTIVE) {
+                    itemDAO.findById(itemId).ifPresent(productManage::addProduct);
+                }
+            } else {
+                if (newStatus == ItemStatus.SOLD) {
+                    productManage.deleteProduct(itemId);
+                    ramItem.setStatus(newStatus);
+                } else {
+                    ramItem.setStatus(newStatus);
+                }
+            }
         }
     }
 
@@ -147,11 +181,35 @@ public class ItemService {
         Item item = productManage.getProduct(itemId);
         if (item == null) {
             item = itemDAO.findById(itemId).orElse(null);
-            if (item != null) {
+            if (item != null && item.getStatus() == ItemStatus.ACTIVE) {
                 productManage.addProduct(item);
             }
         }
         return item;
+    }
+
+    private void validateBasicItemData(Map<String, Object> data) {
+        if (data.containsKey("startingPrice")) {
+            try {
+                double price = Double.parseDouble(data.get("startingPrice").toString());
+                if (price < 0) {
+                    throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Starting price cannot be negative.");
+                }
+            } catch (NumberFormatException e) {
+                throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Starting price must be a valid number.");
+            }
+        }
+        if (data.containsKey("yearCreated")) {
+            try {
+                int year = Integer.parseInt(data.get("yearCreated").toString());
+                int currentYear = LocalDateTime.now().getYear();
+                if (year > currentYear) {
+                    throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Year created cannot be in the future.");
+                }
+            } catch (NumberFormatException e) {
+                throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Year created must be a valid integer.");
+            }
+        }
     }
 
     private ItemDetailDTO toItemDetailDTO(Item item) {

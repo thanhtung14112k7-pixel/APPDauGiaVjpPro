@@ -153,4 +153,21 @@ public class ConnectionManage {
         System.out.println("[ConnectionManage] 👉 Kết quả: Đã đóng an toàn "
                 + totalClosedDevices + " thiết bị thuộc " + totalUsers + " người dùng.");
     }
+
+    /**
+     * Đếm tổng số kết nối Socket (số thiết bị) vật lý đang kết nối live trên toàn Server.
+     * Sử dụng để cấu hình giới hạn trần cứng (Max Connections Cap) chống nghẽn luồng.
+     */
+    public int getOnlineCount() {
+        int totalDevices = 0;
+
+        // Cộng dồn kích thước Set của từng User đang online
+        for (Set<ClientSession> sessions : activeConnections.values()) {
+            if (sessions != null) {
+                totalDevices += sessions.size();
+            }
+        }
+
+        return totalDevices;
+    }
 }

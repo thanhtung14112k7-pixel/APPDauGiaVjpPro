@@ -44,11 +44,11 @@ class UserTest {
 
     /**
      * Test số dư ban đầu của user mới.
-     *
+     * <p>
      * Theo constructor User hiện tại:
      * availableBalance = 0
      * frozenBalance = 0
-     *
+     * <p>
      * availableBalance: số tiền có thể dùng để đấu giá.
      * frozenBalance: số tiền đang bị khóa/đóng băng khi tham gia đấu giá.
      */
@@ -69,7 +69,7 @@ class UserTest {
 
     /**
      * Test trạng thái mặc định của user mới.
-     *
+     * <p>
      * Trong constructor User hiện tại, status được set là UserStatus.ACTIVE.
      * Nghĩa là user mới tạo ra mặc định đang hoạt động.
      */
@@ -87,10 +87,10 @@ class UserTest {
 
     /**
      * Test method setStatus().
-     *
+     * <p>
      * Method này dùng để đổi trạng thái tài khoản,
      * ví dụ từ ACTIVE sang BANNED/LOCKED/INACTIVE tùy enum của project.
-     *
+     * <p>
      * Lưu ý:
      * Nếu enum UserStatus của bạn không có BANNED,
      * hãy đổi UserStatus.BANNED thành trạng thái thật đang có trong project.
@@ -112,9 +112,9 @@ class UserTest {
 
     /**
      * Test addAvailableBalance() với số tiền hợp lệ.
-     *
+     * <p>
      * Method addAvailableBalance(amount) chỉ cộng tiền nếu amount > 0.
-     *
+     * <p>
      * Case này:
      * ban đầu availableBalance = 0
      * cộng thêm 100
@@ -141,10 +141,10 @@ class UserTest {
 
     /**
      * Test addAvailableBalance() với amount = 0.
-     *
+     * <p>
      * Theo code User:
      * if (amount > 0) this.availableBalance += amount;
-     *
+     * <p>
      * Vì 0 không lớn hơn 0 nên method phải bỏ qua,
      * số dư không được thay đổi.
      */
@@ -165,10 +165,10 @@ class UserTest {
 
     /**
      * Test addAvailableBalance() với số âm.
-     *
+     * <p>
      * Người dùng không được nạp số tiền âm,
      * vì điều đó có thể làm sai số dư tài khoản.
-     *
+     * <p>
      * Code hiện tại bỏ qua amount <= 0,
      * nên availableBalance vẫn phải giữ nguyên.
      */
@@ -189,14 +189,14 @@ class UserTest {
 
     /**
      * Test freeze() khi user có đủ tiền.
-     *
+     * <p>
      * freeze(amount) dùng khi bidder đặt giá:
      * hệ thống chuyển một phần tiền từ availableBalance sang frozenBalance.
-     *
+     * <p>
      * Case này:
      * availableBalance ban đầu = 200
      * freeze 80
-     *
+     * <p>
      * Expected:
      * availableBalance = 120
      * frozenBalance = 80
@@ -228,11 +228,11 @@ class UserTest {
 
     /**
      * Test freeze() khi user không đủ tiền.
-     *
+     * <p>
      * Case này:
      * availableBalance = 50
      * muốn freeze 80
-     *
+     * <p>
      * Vì không đủ tiền nên:
      * - method trả về false
      * - availableBalance giữ nguyên
@@ -264,15 +264,15 @@ class UserTest {
 
     /**
      * Test unfreeze() khi frozenBalance đủ tiền.
-     *
+     * <p>
      * unfreeze(amount) dùng để giải phóng tiền đã bị đóng băng,
      * ví dụ khi bidder thua đấu giá hoặc bid bị thay thế.
-     *
+     * <p>
      * Case:
      * availableBalance = 200
      * freeze 80 => available = 120, frozen = 80
      * unfreeze 30
-     *
+     * <p>
      * Expected:
      * availableBalance = 150
      * frozenBalance = 50
@@ -303,11 +303,11 @@ class UserTest {
 
     /**
      * Test unfreeze() khi frozenBalance không đủ.
-     *
+     * <p>
      * Case:
      * frozenBalance = 80
      * muốn unfreeze 100
-     *
+     * <p>
      * Vì frozenBalance không đủ nên method không làm gì.
      */
     @Test
@@ -332,15 +332,15 @@ class UserTest {
 
     /**
      * Test deductFrozen() khi frozenBalance đủ.
-     *
+     * <p>
      * deductFrozen(amount) dùng khi user thắng đấu giá:
      * tiền đã đóng băng sẽ bị trừ thật.
-     *
+     * <p>
      * Case:
      * available = 200
      * freeze 80 => available = 120, frozen = 80
      * deductFrozen 50
-     *
+     * <p>
      * Expected:
      * availableBalance vẫn = 120
      * frozenBalance = 30
@@ -369,11 +369,11 @@ class UserTest {
 
     /**
      * Test deductFrozen() khi frozenBalance không đủ.
-     *
+     * <p>
      * Case:
      * frozenBalance = 80
      * muốn deductFrozen 100
-     *
+     * <p>
      * Vì không đủ frozenBalance nên method không làm gì.
      */
     @Test
@@ -419,7 +419,7 @@ class UserTest {
 
     /**
      * Test setPassword().
-     *
+     * <p>
      * Method này dùng để cập nhật password.
      * Trong thực tế password nên là chuỗi đã hash,
      * không nên lưu plain text.
@@ -441,21 +441,21 @@ class UserTest {
 
     /**
      * Test setEmail().
-     *
+     * <p>
      * Expected đúng:
      * email cũ là old@example.com
      * gọi setEmail("new@example.com")
      * getEmail() phải trả về new@example.com
-     *
+     * <p>
      * Lưu ý:
      * Code User.java hiện tại đang có bug:
      * public void setEmail(String newEmail) {
      *     this.email = email;
      * }
-     *
+     * <p>
      * Đúng phải là:
      * this.email = newEmail;
-     *
+     * <p>
      * Vì vậy test này có thể fail cho đến khi bạn sửa User.java.
      */
     @Test
@@ -475,21 +475,21 @@ class UserTest {
 
     /**
      * Test setUsername().
-     *
+     * <p>
      * Expected đúng:
      * username cũ là oldUsername
      * gọi setUsername("newUsername")
      * getUsername() phải trả về newUsername
-     *
+     * <p>
      * Lưu ý:
      * Code User.java hiện tại đang có bug:
      * public void setUsername(String newUsername) {
      *     this.username = username;
      * }
-     *
+     * <p>
      * Đúng phải là:
      * this.username = newUsername;
-     *
+     * <p>
      * Vì vậy test này có thể fail cho đến khi bạn sửa User.java.
      */
     @Test

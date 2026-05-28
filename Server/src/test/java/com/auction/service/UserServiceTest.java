@@ -1,5 +1,6 @@
 package com.auction.service;
 
+import com.auction.config.DatabaseConnection;
 import com.auction.dao.LogDAO;
 import com.auction.dao.impl.UserDAOImpl;
 import com.auction.dto.AdminDTO;
@@ -14,38 +15,37 @@ import com.auction.exception.ValidationErrorCode;
 import com.auction.exception.ValidationException;
 import com.auction.exception.WalletErrorCode;
 import com.auction.exception.WalletException;
+import com.auction.manage.ConnectionManage;
+import com.auction.manage.UserManage;
 import com.auction.models.User.Admin;
 import com.auction.models.User.Bidder;
 import com.auction.models.User.Seller;
 import com.auction.models.User.User;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.lang.reflect.Field;
+import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mockStatic;
 
 class UserServiceTest {
 
     private UserService userService;
     private FakeUserDAO userDAO;
     private FakeLogDAO logDAO;
+    private ConnectionManage connectionManage; // Sử dụng thực thể thật bypass rào cản JDK 25
 
-    /**
-     * Chạy trước mỗi test.
-     *
-     * Không dùng Mockito cho UserDAOImpl nữa,
-     * vì máy của bạn báo Mockito không mock được class UserDAOImpl trên Java 25.
-     *
-     * Thay vào đó ta dùng:
-     * - FakeUserDAO extends UserDAOImpl
-     * - FakeLogDAO implements LogDAO
-     *
-     * Hai fake này không gọi database thật.
-     */
+    private MockedStatic<DatabaseConnection> mockedDbConnection;
+    private Connection fakeConnection;
+
     @BeforeEach
     void setUp() throws Exception {
         userService = new UserService();
@@ -55,49 +55,110 @@ class UserServiceTest {
 
         injectField(userService, "userDAO", userDAO);
         injectField(userService, "logDAO", logDAO);
+
+        // 🔥 ĐỒNG BỘ ĐÁNH CHẶN JDK 25: Nạp thẳng thực thể mạng kết nối thật của hệ thống
+        connectionManage = ConnectionManage.getInstance();
+        injectField(userService, "connectionManage", connectionManage);
+
+        fakeConnection = new FakeDbConnection();
+        mockedDbConnection = mockStatic(DatabaseConnection.class);
+        mockedDbConnection.when(DatabaseConnection::getConnection).thenReturn(fakeConnection);
+
+        clearUserManageCache();
     }
 
-    /**
-     * Helper inject field private trong UserService.
-     *
-     * UserService đang có:
-     * private final UserDAOImpl userDAO = new UserDAOImpl();
-     * private final LogDAO logDAO = new LogDAOImpl();
-     *
-     * Test thay 2 object thật này bằng fake object.
-     */
+    @AfterEach
+    void tearDown() {
+        if (mockedDbConnection != null) {
+            mockedDbConnection.close();
+        }
+    }
+
     private void injectField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(target, value);
     }
 
+    private void clearUserManageCache() {
+        try {
+            UserManage userManage = UserManage.getInstance();
+            for (Field field : UserManage.class.getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(field.getType())) {
+                    field.setAccessible(true);
+                    java.util.Map<?, ?> map = (java.util.Map<?, ?>) field.get(userManage);
+                    if (map != null) map.clear();
+                } else if (java.util.Collection.class.isAssignableFrom(field.getType())) {
+                    field.setAccessible(true);
+                    java.util.Collection<?> col = (java.util.Collection<?>) field.get(userManage);
+                    if (col != null) col.clear();
+                }
+            }
+
+            // Dọn dẹp luôn bộ đệm Connection vật lý live để tránh nhiễm độc chéo trạng thái Online
+            for (Field field : ConnectionManage.class.getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(field.getType())) {
+                    field.setAccessible(true);
+                    java.util.Map<?, ?> map = (java.util.Map<?, ?>) field.get(connectionManage);
+                    if (map != null) map.clear();
+                } else if (java.util.Collection.class.isAssignableFrom(field.getType())) {
+                    field.setAccessible(true);
+                    java.util.Collection<?> col = (java.util.Collection<?>) field.get(connectionManage);
+                    if (col != null) col.clear();
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * 🔥 KỸ THUẬT PHÒNG THỬ NGHIỆM: Đẩy dữ liệu mồi qua mặt containsKey/isUserOnline của ConnectionManage thật
+     */
+    @SuppressWarnings("unchecked")
+    private void setBidderOnline(String userId, boolean online) throws Exception {
+        for (Field field : ConnectionManage.class.getDeclaredFields()) {
+            if (java.util.Map.class.isAssignableFrom(field.getType())) {
+                field.setAccessible(true);
+                java.util.Map<Object, Object> map = (java.util.Map<Object, Object>) field.get(connectionManage);
+                if (map != null) {
+                    if (online) {
+                        // 🔥 FIX DỨT ĐIỂM: Thay thế "ONLINE_TOKEN_PROXY" bằng HashSet trống để khớp với kiểu ép dữ liệu Set dưới cụm socket
+                        map.put(userId, new java.util.HashSet<>());
+                    } else {
+                        map.remove(userId);
+                    }
+                }
+            } else if (java.util.Collection.class.isAssignableFrom(field.getType())) {
+                field.setAccessible(true);
+                java.util.Collection<Object> col = (java.util.Collection<Object>) field.get(connectionManage);
+                if (col != null) {
+                    if (online) col.add(userId);
+                    else col.remove(userId);
+                }
+            }
+        }
+    }
+
     private void assertValidationError(ValidationException exception, ValidationErrorCode expectedError) {
         assertEquals(expectedError.getCode(), exception.getErrorCode());
     }
 
-    private void assertWalletError(WalletException exception, WalletErrorCode expectedError) {
-        assertEquals(expectedError.getCode(), exception.getErrorCode());
+    private void assertWalletError(WalletException exception) {
+        assertEquals(WalletErrorCode.TRANSACTION_FAILED.getCode(), exception.getErrorCode());
     }
 
-    private void assertAuthError(AuthenticationException exception, AuthErrorCode expectedError) {
-        assertEquals(expectedError.getCode(), exception.getErrorCode());
+    private void assertAuthError(AuthenticationException exception) {
+        assertEquals(AuthErrorCode.USER_NOT_FOUND.getCode(), exception.getErrorCode());
     }
 
     // =========================================================
-    // FAKE DAO
+    // FAKE DAO (ĐÃ KHỚP CHỮ KÝ THAM SỐ CONNECTION & THROWS)
     // =========================================================
 
-    /**
-     * FakeUserDAO thay cho UserDAOImpl thật.
-     *
-     * Nó không kết nối database.
-     * Test muốn DAO trả true/false thì set các biến bên dưới.
-     */
     private static class FakeUserDAO extends UserDAOImpl {
         boolean addAvailableBalanceResult = true;
         boolean withdrawAvailableBalanceResult = true;
         boolean updateStatusResult = true;
+        User findByIdResult = null;
 
         String lastAddBalanceUserId;
         double lastAddBalanceAmount;
@@ -113,21 +174,26 @@ class UserServiceTest {
         int lastOffset;
 
         @Override
-        public boolean addAvailableBalance(String userId, double amount) {
+        public Optional<User> findById(String id) {
+            return Optional.ofNullable(findByIdResult);
+        }
+
+        @Override
+        public boolean addAvailableBalance(Connection conn, String userId, double amount) {
             lastAddBalanceUserId = userId;
             lastAddBalanceAmount = amount;
             return addAvailableBalanceResult;
         }
 
         @Override
-        public boolean withdrawAvailableBalance(String userId, double amount) {
+        public boolean withdrawAvailableBalance(Connection conn, String userId, double amount) {
             lastWithdrawUserId = userId;
             lastWithdrawAmount = amount;
             return withdrawAvailableBalanceResult;
         }
 
         @Override
-        public boolean updateStatus(String userId, String status) {
+        public boolean updateStatus(Connection conn, String userId, String status) {
             lastUpdateStatusUserId = userId;
             lastUpdateStatus = status;
             return updateStatusResult;
@@ -141,11 +207,6 @@ class UserServiceTest {
         }
     }
 
-    /**
-     * FakeLogDAO thay cho LogDAOImpl thật.
-     *
-     * Dùng để kiểm tra lockUserAccount() có ghi log không.
-     */
     private static class FakeLogDAO implements LogDAO {
         boolean insertLogCalled = false;
 
@@ -155,12 +216,17 @@ class UserServiceTest {
         String lastTargetId;
 
         @Override
-        public void insertLog(String logId, String adminId, String actionDetail, String targetType, String targetId) {
+        public void insertLog(Connection conn, String logId, String adminId, String actionDetail, String targetType, String targetId) {
             insertLogCalled = true;
             lastAdminId = adminId;
             lastActionDetail = actionDetail;
             lastTargetType = targetType;
             lastTargetId = targetId;
+        }
+
+        @Override
+        public List<com.auction.dto.ActionLogDTO> findPaginatedLogs(int limit, int offset) {
+            return new ArrayList<>();
         }
 
         @Override
@@ -173,61 +239,27 @@ class UserServiceTest {
     // HELPER TẠO USER MẪU
     // =========================================================
 
-    /**
-     * Helper tạo Bidder có dữ liệu cố định.
-     *
-     * Dùng constructor load từ DB để tự set id,
-     * vì dashboard cần kiểm tra id, role, balance, status.
-     */
     private Bidder sampleBidder(String id) {
         return new Bidder(
-                id,
-                "bidder_" + id,
-                id + "@example.com",
-                "hashed-password",
-                UserRole.BIDDER,
-                500.0,
-                100.0,
-                UserStatus.ACTIVE,
-                LocalDateTime.now().minusDays(1),
-                LocalDateTime.now()
+                id, "bidder_" + id, id + "@example.com", "hashed-password",
+                UserRole.BIDDER, 500.0, 100.0, UserStatus.ACTIVE,
+                LocalDateTime.now().minusDays(1), LocalDateTime.now()
         );
     }
 
-    /**
-     * Helper tạo Seller có dữ liệu cố định.
-     */
     private Seller sampleSeller(String id) {
         return new Seller(
-                id,
-                "seller_" + id,
-                id + "@example.com",
-                "hashed-password",
-                UserRole.SELLER,
-                800.0,
-                50.0,
-                UserStatus.ACTIVE,
-                LocalDateTime.now().minusDays(1),
-                LocalDateTime.now(),
-                4.5
+                id, "seller_" + id, id + "@example.com", "hashed-password",
+                UserRole.SELLER, 800.0, 50.0, UserStatus.ACTIVE,
+                LocalDateTime.now().minusDays(1), LocalDateTime.now(), 4.5
         );
     }
 
-    /**
-     * Helper tạo Admin có dữ liệu cố định.
-     */
     private Admin sampleAdmin(String id) {
         return new Admin(
-                id,
-                "admin_" + id,
-                id + "@example.com",
-                "hashed-password",
-                UserRole.ADMIN,
-                0.0,
-                0.0,
-                UserStatus.ACTIVE,
-                LocalDateTime.now().minusDays(1),
-                LocalDateTime.now()
+                id, "admin_" + id, id + "@example.com", "hashed-password",
+                UserRole.ADMIN, 0.0, 0.0, UserStatus.ACTIVE,
+                LocalDateTime.now().minusDays(1), LocalDateTime.now()
         );
     }
 
@@ -235,66 +267,36 @@ class UserServiceTest {
     // depositMoney()
     // =========================================================
 
-    /**
-     * depositMoney(): bidderId null thì báo thiếu field.
-     */
     @Test
     void depositMoneyShouldThrowWhenBidderIdIsNull() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.depositMoney(null, 100.0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.depositMoney(null, 100.0));
         assertValidationError(exception, ValidationErrorCode.MISSING_REQUIRED_FIELD);
     }
 
-    /**
-     * depositMoney(): amount = 0 thì không hợp lệ.
-     */
     @Test
     void depositMoneyShouldThrowWhenAmountIsZero() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.depositMoney("bidder-1", 0.0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.depositMoney("bidder-1", 0.0));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    /**
-     * depositMoney(): amount âm thì không hợp lệ.
-     */
     @Test
     void depositMoneyShouldThrowWhenAmountIsNegative() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.depositMoney("bidder-1", -50.0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.depositMoney("bidder-1", -50.0));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    /**
-     * depositMoney(): DAO cộng tiền thất bại thì báo TRANSACTION_FAILED.
-     */
     @Test
     void depositMoneyShouldThrowWhenDaoAddBalanceFails() {
         userDAO.addAvailableBalanceResult = false;
-
-        WalletException exception = assertThrows(WalletException.class, () -> {
-            userService.depositMoney("bidder-1", 100.0);
-        });
-
-        assertWalletError(exception, WalletErrorCode.TRANSACTION_FAILED);
+        WalletException exception = assertThrows(WalletException.class, () -> userService.depositMoney("bidder-1", 100.0));
+        assertWalletError(exception);
     }
 
-    /**
-     * depositMoney(): DAO cộng tiền thành công thì không lỗi.
-     */
     @Test
     void depositMoneyShouldNotThrowWhenDaoAddBalanceSuccess() {
         userDAO.addAvailableBalanceResult = true;
 
-        assertDoesNotThrow(() -> {
-            userService.depositMoney("bidder-1", 100.0);
-        });
+        assertDoesNotThrow(() -> userService.depositMoney("bidder-1", 100.0));
 
         assertEquals("bidder-1", userDAO.lastAddBalanceUserId);
         assertEquals(100.0, userDAO.lastAddBalanceAmount);
@@ -304,109 +306,80 @@ class UserServiceTest {
     // withdrawMoney()
     // =========================================================
 
-    /**
-     * withdrawMoney(): bidderId null thì báo thiếu field.
-     */
     @Test
     void withdrawMoneyShouldThrowWhenBidderIdIsNull() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.withdrawMoney(null, 100.0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.withdrawMoney(null, 100.0));
         assertValidationError(exception, ValidationErrorCode.MISSING_REQUIRED_FIELD);
     }
 
-    /**
-     * withdrawMoney(): amount = 0 thì không hợp lệ.
-     */
     @Test
     void withdrawMoneyShouldThrowWhenAmountIsZero() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.withdrawMoney("bidder-1", 0.0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.withdrawMoney("bidder-1", 0.0));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    /**
-     * withdrawMoney(): amount âm thì không hợp lệ.
-     */
     @Test
     void withdrawMoneyShouldThrowWhenAmountIsNegative() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.withdrawMoney("bidder-1", -100.0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.withdrawMoney("bidder-1", -100.0));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    /**
-     * withdrawMoney(): DAO rút tiền thất bại thì báo TRANSACTION_FAILED.
-     */
     @Test
     void withdrawMoneyShouldThrowWhenDaoWithdrawFails() {
+        userDAO.findByIdResult = sampleBidder("bidder-1");
         userDAO.withdrawAvailableBalanceResult = false;
 
-        WalletException exception = assertThrows(WalletException.class, () -> {
-            userService.withdrawMoney("bidder-1", 100.0);
-        });
-
-        assertWalletError(exception, WalletErrorCode.TRANSACTION_FAILED);
+        WalletException exception = assertThrows(WalletException.class, () -> userService.withdrawMoney("bidder-1", 100.0));
+        assertWalletError(exception);
     }
 
-    /**
-     * withdrawMoney(): DAO rút tiền thành công thì không lỗi.
-     */
+    // 🌟 TEST CASE THÊM MỚI: Chặn rút tiền khi số thâm hụt vượt số dư khả dụng trên RAM
+    @Test
+    void withdrawMoneyShouldThrowWhenBalanceIsInsufficient() {
+        userDAO.findByIdResult = sampleBidder("bidder-low-balance"); // Có sẵn 500.0 khả dụng
+
+        WalletException exception = assertThrows(WalletException.class, () -> userService.withdrawMoney("bidder-low-balance", 600.0));
+        assertEquals(WalletErrorCode.INSUFFICIENT_BALANCE.getCode(), exception.getErrorCode());
+    }
+
+    // 🌟 TEST CASE THÊM MỚI: Chặn rút tiền khi phát hiện tài khoản người dùng đang bị khóa (BANNED)
+    @Test
+    void withdrawMoneyShouldThrowWhenUserIsBanned() {
+        Bidder bannedBidder = sampleBidder("bidder-banned");
+        bannedBidder.setStatus(UserStatus.BANNED); // Khóa tài khoản
+        userDAO.findByIdResult = bannedBidder;
+
+        WalletException exception = assertThrows(WalletException.class, () -> userService.withdrawMoney("bidder-banned", 100.0));
+        assertEquals(WalletErrorCode.TRANSACTION_FAILED.getCode(), exception.getErrorCode());
+    }
+
     @Test
     void withdrawMoneyShouldNotThrowWhenDaoWithdrawSuccess() {
+        userDAO.findByIdResult = sampleBidder("bidder-1");
         userDAO.withdrawAvailableBalanceResult = true;
 
-        assertDoesNotThrow(() -> {
-            userService.withdrawMoney("bidder-1", 100.0);
-        });
+        assertDoesNotThrow(() -> userService.withdrawMoney("bidder-1", 100.0));
 
         assertEquals("bidder-1", userDAO.lastWithdrawUserId);
         assertEquals(100.0, userDAO.lastWithdrawAmount);
     }
 
     // =========================================================
-    // getAdminUserDashboard() - VALIDATION
+    // getAdminUserDashboard()
     // =========================================================
 
-    /**
-     * getAdminUserDashboard(): page phải > 0.
-     */
     @Test
     void getAdminUserDashboardShouldThrowWhenPageInvalid() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.getAdminUserDashboard(0, 10);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.getAdminUserDashboard(0, 10));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    /**
-     * getAdminUserDashboard(): pageSize phải > 0.
-     */
     @Test
     void getAdminUserDashboardShouldThrowWhenPageSizeInvalid() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.getAdminUserDashboard(1, 0);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.getAdminUserDashboard(1, 0));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    // =========================================================
-    // getAdminUserDashboard() - CONVERT DTO
-    // =========================================================
-
-    /**
-     * getAdminUserDashboard(): DAO trả list rỗng thì service trả list rỗng.
-     *
-     * Với page = 1, pageSize = 10:
-     * offset = (1 - 1) * 10 = 0
-     */
     @Test
     void getAdminUserDashboardShouldReturnEmptyListWhenDaoReturnsEmptyList() {
         userDAO.paginatedUsers = List.of();
@@ -415,30 +388,18 @@ class UserServiceTest {
 
         assertNotNull(result);
         assertTrue(result.isEmpty());
-
         assertEquals(10, userDAO.lastPageSize);
         assertEquals(0, userDAO.lastOffset);
     }
 
-    /**
-     * getAdminUserDashboard(): kiểm tra công thức offset.
-     *
-     * Với page = 3, pageSize = 20:
-     * offset = (3 - 1) * 20 = 40
-     */
     @Test
     void getAdminUserDashboardShouldCalculateOffsetCorrectly() {
         userDAO.paginatedUsers = List.of();
-
         userService.getAdminUserDashboard(3, 20);
-
         assertEquals(20, userDAO.lastPageSize);
         assertEquals(40, userDAO.lastOffset);
     }
 
-    /**
-     * getAdminUserDashboard(): convert Bidder sang BidderDTO.
-     */
     @Test
     void getAdminUserDashboardShouldConvertBidderToBidderDTO() {
         Bidder bidder = sampleBidder("bidder-dashboard-1");
@@ -450,64 +411,51 @@ class UserServiceTest {
         List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
 
         assertEquals(1, result.size());
-        assertInstanceOf(BidderDTO.class, result.get(0));
+        assertInstanceOf(BidderDTO.class, result.getFirst());
 
-        BidderDTO dto = (BidderDTO) result.get(0);
-
+        BidderDTO dto = (BidderDTO) result.getFirst();
         assertEquals("bidder-dashboard-1", dto.getId());
         assertEquals("bidder_bidder-dashboard-1", dto.getUsername());
         assertEquals("bidder-dashboard-1@example.com", dto.getEmail());
         assertEquals(UserRole.BIDDER, dto.getRole());
         assertEquals(UserStatus.ACTIVE, dto.getStatus());
-
         assertEquals(500.0, dto.getAvailableBalance());
         assertEquals(100.0, dto.getFrozenBalance());
         assertEquals(List.of("auction-1", "auction-2"), dto.getJoinedAuctionIds());
     }
 
-    /**
-     * getAdminUserDashboard(): convert Seller sang SellerDTO.
-     */
     @Test
     void getAdminUserDashboardShouldConvertSellerToSellerDTO() {
         Seller seller = sampleSeller("seller-dashboard-1");
-
         userDAO.paginatedUsers = List.of(seller);
 
         List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
 
         assertEquals(1, result.size());
-        assertInstanceOf(SellerDTO.class, result.get(0));
+        assertInstanceOf(SellerDTO.class, result.getFirst());
 
-        SellerDTO dto = (SellerDTO) result.get(0);
-
+        SellerDTO dto = (SellerDTO) result.getFirst();
         assertEquals("seller-dashboard-1", dto.getId());
         assertEquals("seller_seller-dashboard-1", dto.getUsername());
         assertEquals("seller-dashboard-1@example.com", dto.getEmail());
         assertEquals(UserRole.SELLER, dto.getRole());
         assertEquals(UserStatus.ACTIVE, dto.getStatus());
-
         assertEquals(800.0, dto.getAvailableBalance());
         assertEquals(50.0, dto.getFrozenBalance());
         assertEquals(4.5, dto.getRating());
     }
 
-    /**
-     * getAdminUserDashboard(): convert Admin sang AdminDTO.
-     */
     @Test
     void getAdminUserDashboardShouldConvertAdminToAdminDTO() {
         Admin admin = sampleAdmin("admin-dashboard-1");
-
         userDAO.paginatedUsers = List.of(admin);
 
         List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
 
         assertEquals(1, result.size());
-        assertInstanceOf(AdminDTO.class, result.get(0));
+        assertInstanceOf(AdminDTO.class, result.getFirst());
 
-        AdminDTO dto = (AdminDTO) result.get(0);
-
+        AdminDTO dto = (AdminDTO) result.getFirst();
         assertEquals("admin-dashboard-1", dto.getId());
         assertEquals("admin_admin-dashboard-1", dto.getUsername());
         assertEquals("admin-dashboard-1@example.com", dto.getEmail());
@@ -515,9 +463,6 @@ class UserServiceTest {
         assertEquals(UserStatus.ACTIVE, dto.getStatus());
     }
 
-    /**
-     * getAdminUserDashboard(): convert nhiều loại user cùng lúc.
-     */
     @Test
     void getAdminUserDashboardShouldConvertMixedUsersToCorrectDTOs() {
         Bidder bidder = sampleBidder("bidder-mixed");
@@ -529,92 +474,67 @@ class UserServiceTest {
         List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
 
         assertEquals(3, result.size());
-
         assertInstanceOf(BidderDTO.class, result.get(0));
         assertInstanceOf(SellerDTO.class, result.get(1));
         assertInstanceOf(AdminDTO.class, result.get(2));
-
-        assertEquals(UserRole.BIDDER, result.get(0).getRole());
-        assertEquals(UserRole.SELLER, result.get(1).getRole());
-        assertEquals(UserRole.ADMIN, result.get(2).getRole());
     }
 
     // =========================================================
     // lockUserAccount()
     // =========================================================
 
-    /**
-     * lockUserAccount(): thiếu adminId thì BAD_REQUEST.
-     */
     @Test
     void lockUserAccountShouldThrowWhenAdminIdIsNull() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.lockUserAccount(null, "user-1", UserStatus.BANNED);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.lockUserAccount(null, "user-1", UserStatus.BANNED));
         assertValidationError(exception, ValidationErrorCode.BAD_REQUEST);
     }
 
-    /**
-     * lockUserAccount(): thiếu userId thì BAD_REQUEST.
-     */
     @Test
     void lockUserAccountShouldThrowWhenUserIdIsNull() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.lockUserAccount("admin-1", null, UserStatus.BANNED);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.lockUserAccount("admin-1", null, UserStatus.BANNED));
         assertValidationError(exception, ValidationErrorCode.BAD_REQUEST);
     }
 
-    /**
-     * lockUserAccount(): thiếu targetStatus thì BAD_REQUEST.
-     */
     @Test
     void lockUserAccountShouldThrowWhenTargetStatusIsNull() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.lockUserAccount("admin-1", "user-1", null);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.lockUserAccount("admin-1", "user-1", null));
         assertValidationError(exception, ValidationErrorCode.BAD_REQUEST);
     }
 
-    /**
-     * lockUserAccount(): chỉ cho khóa sang BANNED.
-     */
     @Test
     void lockUserAccountShouldThrowWhenTargetStatusIsNotBanned() {
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            userService.lockUserAccount("admin-1", "user-1", UserStatus.ACTIVE);
-        });
-
+        ValidationException exception = assertThrows(ValidationException.class, () -> userService.lockUserAccount("admin-1", "user-1", UserStatus.ACTIVE));
         assertValidationError(exception, ValidationErrorCode.INVALID_PARAMETER);
     }
 
-    /**
-     * lockUserAccount(): DAO updateStatus fail thì USER_NOT_FOUND.
-     */
     @Test
     void lockUserAccountShouldThrowWhenDaoUpdateStatusFails() {
         userDAO.updateStatusResult = false;
-
-        AuthenticationException exception = assertThrows(AuthenticationException.class, () -> {
-            userService.lockUserAccount("admin-1", "user-1", UserStatus.BANNED);
-        });
-
-        assertAuthError(exception, AuthErrorCode.USER_NOT_FOUND);
+        AuthenticationException exception = assertThrows(AuthenticationException.class, () -> userService.lockUserAccount("admin-1", "user-1", UserStatus.BANNED));
+        assertAuthError(exception);
     }
 
-    /**
-     * lockUserAccount(): updateStatus thành công thì ghi log.
-     */
+    // 🌟 TEST CASE THÊM MỚI: Kiểm tra mạch kích hoạt ngắt Socket Online, trục xuất tài khoản BANNED khỏi RAM live
+    @Test
+    void lockUserAccountShouldForceDisconnectUserWhenOnline() throws Exception {
+        userDAO.updateStatusResult = true;
+
+        Bidder onlineUser = sampleBidder("user-online-123");
+        UserManage.getInstance().addUser(onlineUser); // Đưa lên bộ đệm RAM gài bẫy
+        setBidderOnline("user-online-123", true);    // Cấu hình mồi trạng thái Online thật
+
+        assertDoesNotThrow(() -> userService.lockUserAccount("admin-1", "user-online-123", UserStatus.BANNED));
+
+        // Khẳng định chốt hạ: Phiên Online bắt buộc phải bị trục xuất rớt Socket khỏi Core RAM live tức thì
+        assertNull(UserManage.getInstance().getUser("user-online-123"));
+        assertFalse(connectionManage.isUserOnline("user-online-123"));
+    }
+
     @Test
     void lockUserAccountShouldInsertLogWhenSuccess() {
         userDAO.updateStatusResult = true;
 
-        assertDoesNotThrow(() -> {
-            userService.lockUserAccount("admin-1", "user-1", UserStatus.BANNED);
-        });
+        assertDoesNotThrow(() -> userService.lockUserAccount("admin-1", "user-1", UserStatus.BANNED));
 
         assertEquals("user-1", userDAO.lastUpdateStatusUserId);
         assertEquals(UserStatus.BANNED.name(), userDAO.lastUpdateStatus);
@@ -624,5 +544,62 @@ class UserServiceTest {
         assertEquals("USER", logDAO.lastTargetType);
         assertEquals("user-1", logDAO.lastTargetId);
         assertTrue(logDAO.lastActionDetail.contains("BANNED"));
+    }
+
+    private static class FakeDbConnection implements Connection {
+        @Override public void setAutoCommit(boolean autoCommit) {}
+        @Override public boolean getAutoCommit() { return true; }
+        @Override public void commit() {}
+        @Override public void rollback() {}
+        @Override public void close() {}
+        @Override public boolean isClosed() { return false; }
+        @Override public <T> T unwrap(Class<T> iface) { return null; }
+        @Override public boolean isWrapperFor(Class<?> iface) { return false; }
+        @Override public java.sql.Statement createStatement() { return null; }
+        @Override public java.sql.PreparedStatement prepareStatement(String sql) { return null; }
+        @Override public java.sql.CallableStatement prepareCall(String sql) { return null; }
+        @Override public String nativeSQL(String sql) { return null; }
+        @Override public java.sql.DatabaseMetaData getMetaData() { return null; }
+        @Override public void setReadOnly(boolean readOnly) {}
+        @Override public boolean isReadOnly() { return false; }
+        @Override public void setCatalog(String catalog) {}
+        @Override public String getCatalog() { return null; }
+        @Override public void setTransactionIsolation(int level) {}
+        @Override public int getTransactionIsolation() { return Connection.TRANSACTION_NONE; }
+        @Override public java.sql.SQLWarning getWarnings() { return null; }
+        @Override public void clearWarnings() {}
+        @Override public java.sql.Statement createStatement(int resultSetType, int resultSetConcurrency) { return null; }
+        @Override public java.sql.PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) { return null; }
+        @Override public java.sql.CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency) { return null; }
+        @Override public java.util.Map<String, Class<?>> getTypeMap() { return null; }
+        @Override public void setTypeMap(java.util.Map<String, Class<?>> map) {}
+        @Override public void setHoldability(int holdability) {}
+        @Override public int getHoldability() { return 0; }
+        @Override public java.sql.Savepoint setSavepoint() { return null; }
+        @Override public java.sql.Savepoint setSavepoint(String name) { return null; }
+        @Override public void rollback(java.sql.Savepoint savepoint) {}
+        @Override public void releaseSavepoint(java.sql.Savepoint savepoint) {}
+        @Override public java.sql.Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability) { return null; }
+        @Override public java.sql.PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) { return null; }
+        @Override public java.sql.CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) { return null; }
+        @Override public java.sql.PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) { return null; }
+        @Override public java.sql.PreparedStatement prepareStatement(String sql, int[] columnIndexes) { return null; }
+        @Override public java.sql.PreparedStatement prepareStatement(String sql, String[] columnNames) { return null; }
+        @Override public java.sql.Clob createClob() { return null; }
+        @Override public java.sql.Blob createBlob() { return null; }
+        @Override public java.sql.NClob createNClob() { return null; }
+        @Override public java.sql.SQLXML createSQLXML() { return null; }
+        @Override public boolean isValid(int timeout) { return true; }
+        @Override public void setClientInfo(String name, String value) {}
+        @Override public void setClientInfo(java.util.Properties properties) {}
+        @Override public String getClientInfo(String name) { return null; }
+        @Override public java.util.Properties getClientInfo() { return null; }
+        @Override public java.sql.Array createArrayOf(String typeName, Object[] elements) { return null; }
+        @Override public java.sql.Struct createStruct(String typeName, Object[] attributes) { return null; }
+        @Override public void setSchema(String schema) {}
+        @Override public String getSchema() { return null; }
+        @Override public void abort(java.util.concurrent.Executor executor) {}
+        @Override public void setNetworkTimeout(java.util.concurrent.Executor executor, int milliseconds) {}
+        @Override public int getNetworkTimeout() { return 0; }
     }
 }

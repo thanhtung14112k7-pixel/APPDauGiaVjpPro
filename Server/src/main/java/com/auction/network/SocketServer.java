@@ -7,6 +7,8 @@ package com.auction.network;
  - Chạy ClientHandler bằng Thread riêng
  */
 
+import com.auction.manage.ConnectionManage;
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -15,6 +17,7 @@ import java.util.concurrent.Executors;
 
 public class SocketServer {
     private static final int PORT = 5555;
+    private static final int MAX_CLIENTS = 300; // Trần cứng khống chế quy mô hệ thống
 
     // Cấp phát một "đội quân" 50 luồng chạy sẵn
     private final ExecutorService threadPool = Executors.newFixedThreadPool(50);
@@ -24,6 +27,13 @@ public class SocketServer {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {      // Mở ServerSocket tại port 5555.
             while (true) {                                              // Từ lúc này, Server sẵn sàng nhận kết nối.
                 Socket clientSocket = serverSocket.accept();
+
+                // Kiểm tra nếu số lượng kết nối live hiện tại vượt quá 100
+                if (ConnectionManage.getInstance().getOnlineCount() >= MAX_CLIENTS) {
+                    // Từ chối khéo, đóng socket ngay lập tức để bảo vệ tài nguyên Server
+                    clientSocket.close();
+                    continue;
+                }
 
                 System.out.println("[Server] Có client kết nối: "
                         + clientSocket.getInetAddress());

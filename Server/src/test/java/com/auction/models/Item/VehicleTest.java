@@ -12,13 +12,13 @@ class VehicleTest {
 
     /**
      * Test constructor tạo mới của Vehicle.
-     *
+     * <p>
      * Vehicle có các field riêng:
      * - model
      * - engineType
      * - licensePlate
      * - kmage
-     *
+     * <p>
      * Constructor Vehicle tự truyền ItemType.VEHICLES lên class cha Item.
      */
     @Test
@@ -57,7 +57,7 @@ class VehicleTest {
 
     /**
      * Test các setter riêng của Vehicle.
-     *
+     * <p>
      * Các setter:
      * - setModel()
      * - setEngineType()
@@ -94,11 +94,11 @@ class VehicleTest {
 
     /**
      * Test setKmAge().
-     *
+     * <p>
      * Trong Vehicle có cả:
      * - setKmage(double kmage)
      * - setKmAge(double kmAge)
-     *
+     * <p>
      * Cả hai đều cập nhật cùng field kmage.
      */
     @Test
@@ -126,7 +126,7 @@ class VehicleTest {
 
     /**
      * Test constructor load từ DB của Vehicle.
-     *
+     * <p>
      * Constructor DB nhận id, status, createdAt
      * và các field riêng của Vehicle.
      */
@@ -172,7 +172,7 @@ class VehicleTest {
 
     /**
      * Test getInfo() của Vehicle.
-     *
+     * <p>
      * getInfo() trả về chuỗi mô tả gồm:
      * - [Phương tiện]
      * - Tên

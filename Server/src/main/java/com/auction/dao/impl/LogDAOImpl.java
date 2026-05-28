@@ -12,15 +12,13 @@ public class LogDAOImpl implements LogDAO {
 
     /**
      * GHI LOG HÀNH ĐỘNG MỚI CỦA ADMIN
-     * Cột created_at sẽ được Database tự động sinh thời gian thực (TIMESTAMP)
+     * 🔥 SỬA: Nhận Connection từ ngoài truyền vào và ném ngoại lệ lên tầng điều phối (Service)
      */
     @Override
-    public void insertLog(String logId, String adminId, String actionDetail, String targetType, String targetId) {
+    public void insertLog(Connection conn, String logId, String adminId, String actionDetail, String targetType, String targetId) throws SQLException {
         String sql = "INSERT INTO action_logs (id, admin_id, action_detail, target_type, target_id) VALUES (?, ?, ?, ?, ?)";
 
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, logId);
             stmt.setString(2, adminId);
             stmt.setString(3, actionDetail);
@@ -28,15 +26,14 @@ public class LogDAOImpl implements LogDAO {
             stmt.setString(5, targetId);
 
             stmt.executeUpdate();
-        } catch (SQLException e) {
-            System.err.println("❌ Lỗi Insert Log: " + e.getMessage());
         }
     }
 
     /**
      * TRUY VẤN DANH SÁCH LOG PHÂN TRANG (PAGINATION)
-     * Luôn ưu tiên hiển thị các hành động mới thực hiện lên trên đầu (ORDER BY created_at DESC)
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
      */
+    @Override
     public List<ActionLogDTO> findPaginatedLogs(int limit, int offset) {
         String sql = "SELECT id, admin_id, action_detail, target_type, target_id, created_at " +
                 "FROM action_logs " +
@@ -53,10 +50,8 @@ public class LogDAOImpl implements LogDAO {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    // Trích xuất mốc thời gian TIMESTAMP từ DB chuyển sang LocalDateTime của Java
                     java.time.LocalDateTime time = rs.getTimestamp("created_at").toLocalDateTime();
 
-                    // Khởi tạo DTO đóng gói trực tiếp tài nguyên
                     ActionLogDTO dto = new ActionLogDTO(
                             rs.getString("id"),
                             rs.getString("admin_id"),
@@ -75,7 +70,8 @@ public class LogDAOImpl implements LogDAO {
     }
 
     /**
-     * 🔥 HÀM BỔ SUNG PHỤC VỤ PHÂN TRANG: Đếm tổng số dòng log trong hệ thống
+     * Đếm tổng số dòng log trong hệ thống
+     * Hàm ĐỌC (SELECT) độc lập, tự mở connection nên giữ lại try-catch cục bộ an toàn
      */
     @Override
     public long getTotalLogCount() {

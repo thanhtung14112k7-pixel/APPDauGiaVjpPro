@@ -49,7 +49,7 @@ public class AuthorizationService {
             Map.entry(ActionType.GET_SELLER_ITEMS.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
             Map.entry(ActionType.GET_ITEM_DETAIL.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
             Map.entry(ActionType.CREATE_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
-            Map.entry(ActionType.CANCEL_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            Map.entry(ActionType.CANCEL_AUCTION.name(), Set.of( UserRole.ADMIN)),
             Map.entry(ActionType.PLACE_BID.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.LIVE_ENTERED.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.LIVE_EXITED.name(), Set.of(UserRole.BIDDER)),
