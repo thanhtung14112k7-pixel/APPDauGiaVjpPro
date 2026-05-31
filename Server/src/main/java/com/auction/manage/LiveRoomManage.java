@@ -145,6 +145,8 @@ public class LiveRoomManage implements AuctionObserver {
         responseBody.put("roomId", roomId);
         responseBody.put("highestBidderName", bidData.getBidderName());  // Người dẫn đầu mới
         responseBody.put("highestPrice", bidData.getAmount());   // Giá đỉnh mới
+        responseBody.put("newEndTime", bidData.getNewEndTime()); // Đồng bộ thời gian kết thúc mới
+        responseBody.put("liveStepPrice", bidData.getLiveStepPrice()); // Đồng bộ bước giá live mới
         responseBody.put("bidTransaction", bidData);             // Nguyên thực thể DTO để vẽ dòng lịch sử
 
         // Tạo SocketResponse với ActionType chung (ví dụ ActionType.BID_UPDATE của bạn)

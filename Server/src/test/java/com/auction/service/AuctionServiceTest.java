@@ -6,6 +6,8 @@ import com.auction.dao.BidTransactionDAO;
 import com.auction.dao.ItemDAO;
 import com.auction.dao.LogDAO;
 import com.auction.dao.UserDAO;
+import com.auction.dao.AutoBidDAO;
+import com.auction.models.Auction.AutoBid;
 import com.auction.dto.AuctionSummaryDTO;
 import com.auction.enums.AuctionStatus;
 import com.auction.enums.ItemStatus;
@@ -503,12 +505,71 @@ class AuctionServiceTest {
         when(auctionDAO.findByStatuses(any(Connection.class), any())).thenReturn(List.of(auction));
         when(itemDAO.findById(auction.getItemId())).thenReturn(Optional.of(item));
 
+        // 🔥 FIX: Mock autoBidDAO để tránh NPE khi FakeDbConnection.prepareStatement() trả null
+        AutoBidDAO autoBidDAO = mock(AutoBidDAO.class);
+        injectField(auctionService, "autoBidDAO", autoBidDAO);
+        when(autoBidDAO.findActiveByAuctionId(any(Connection.class), eq("auction-load-1"))).thenReturn(List.of());
+
         auctionService.loadAuctionsToRAM();
 
         verify(auctionDAO).findByStatuses(any(Connection.class), any());
         assertNotNull(auction.getItem());
         assertEquals("Laptop Dell", auction.getItem().getName());
         assertNotNull(auctionManage.getAuctionById("auction-load-1"));
+    }
+
+    @Test
+    void setupAutoBidShouldCreateAutoBidAndTriggerAutoBidding() throws Exception {
+        Item item = sampleItem("item-autobid");
+        Auction auction = sampleAuction("auction-autobid", item);
+        auction.setStatus(AuctionStatus.RUNNING);
+        auctionManage.addAuction(auction);
+
+        Bidder bidder = new Bidder("bidder-autobid", "khach", "k@gmail.com", "P@ss123", UserRole.BIDDER, 50000000.0, 0.0, UserStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
+        setBidderOnline(bidder.getId(), true);
+
+        AutoBidDAO autoBidDAO = mock(AutoBidDAO.class);
+        injectField(auctionService, "autoBidDAO", autoBidDAO);
+        when(autoBidDAO.insertOrUpdate(any(Connection.class), any(AutoBid.class))).thenReturn(true);
+
+        // 🔥 FIX: Stub đầy đủ dependencies cho triggerAutoBids → executeBidInternal chạy thành công
+        // Khi setupAutoBid kích hoạt triggerAutoBids, nó gọi executeBidInternal cần:
+        // freezeMoney=true, updatePriceAndWinner=true, insertBid=true
+        when(userDAO.freezeMoney(any(Connection.class), eq(bidder.getId()), anyDouble())).thenReturn(true);
+        when(auctionDAO.updatePriceAndWinner(any(Connection.class), eq("auction-autobid"), anyDouble(), eq(bidder.getId()), anyString(), any(LocalDateTime.class), anyDouble())).thenReturn(true);
+        when(bidTransactionDAO.insertBid(any(Connection.class), any())).thenReturn(true);
+
+        assertDoesNotThrow(() -> auctionService.setupAutoBid(bidder.getId(), "auction-autobid", 15000000.0, 200000.0));
+
+        verify(autoBidDAO).insertOrUpdate(any(Connection.class), any(AutoBid.class));
+        assertEquals(1, auction.getAutoBidsQueue().size());
+    }
+
+    @Test
+    void cancelAutoBidShouldDisableAndRemoveFromRam() throws Exception {
+        Item item = sampleItem("item-autobid-cancel");
+        Auction auction = sampleAuction("auction-autobid-cancel", item);
+        auction.setStatus(AuctionStatus.RUNNING);
+        auctionManage.addAuction(auction);
+
+        Bidder bidder = new Bidder("bidder-autobid-cancel", "khach", "k@gmail.com", "P@ss123", UserRole.BIDDER, 50000000.0, 0.0, UserStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
+
+        AutoBidDAO autoBidDAO = mock(AutoBidDAO.class);
+        injectField(auctionService, "autoBidDAO", autoBidDAO);
+
+        AutoBid autoBid = new AutoBid(bidder.getId(), "auction-autobid-cancel", 15000000.0, 200000.0);
+        auction.addOrUpdateAutoBidInRam(autoBid);
+        assertEquals(1, auction.getAutoBidsQueue().size());
+
+        when(autoBidDAO.findActiveByUserAndAuction(any(Connection.class), eq(bidder.getId()), eq("auction-autobid-cancel"))).thenReturn(Optional.of(autoBid));
+        when(autoBidDAO.disableAutoBid(any(Connection.class), eq(autoBid.getId()))).thenReturn(true);
+
+        assertDoesNotThrow(() -> auctionService.cancelAutoBid(bidder.getId(), "auction-autobid-cancel"));
+
+        verify(autoBidDAO).disableAutoBid(any(Connection.class), eq(autoBid.getId()));
+        assertEquals(0, auction.getAutoBidsQueue().size());
     }
 
     private static class FakeDbConnection implements Connection {

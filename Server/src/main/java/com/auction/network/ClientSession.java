@@ -21,6 +21,8 @@ import com.auction.manage.UserManage;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,12 +40,40 @@ public class ClientSession {
     // Đảm bảo tất cả các Request do chính Client này bấm nút gửi lên sẽ bắt buộc phải xếp hàng chạy theo đúng thứ tự thời gian.
     private final ExecutorService sessionExecutor = Executors.newSingleThreadExecutor();
 
+    // 🔥 RATE LIMITER: Hàng đợi lưu timestamp (epoch ms) các request gần nhất trong cửa sổ trượt 1 giây
+    private static final int MAX_REQUESTS_PER_SECOND = 10;
+    private static final long RATE_WINDOW_MS = 1000;
+    private final Queue<Long> requestTimestamps = new LinkedList<>();
+
     private final Socket socket;
     private final PrintWriter out;
 
     public ClientSession(Socket socket, PrintWriter out) {
         this.socket = socket;
         this.out = out;
+    }
+
+    /**
+     * 🔥 RATE LIMITER: Kiểm tra xem Session này có đang gửi quá nhiều request hay không.
+     * Sử dụng cửa sổ trượt (Sliding Window) 1 giây, tối đa 10 requests.
+     * @return true nếu bị chặn (rate limited), false nếu cho phép tiếp tục
+     */
+    public synchronized boolean isRateLimited() {
+        long now = System.currentTimeMillis();
+
+        // Loại bỏ các timestamp đã hết hạn (nằm ngoài cửa sổ 1 giây)
+        while (!requestTimestamps.isEmpty() && (now - requestTimestamps.peek()) > RATE_WINDOW_MS) {
+            requestTimestamps.poll();
+        }
+
+        // Nếu đã đạt hoặc vượt giới hạn, chặn request
+        if (requestTimestamps.size() >= MAX_REQUESTS_PER_SECOND) {
+            return true;
+        }
+
+        // Ghi nhận timestamp của request hợp lệ
+        requestTimestamps.add(now);
+        return false;
     }
 
     // 🔥 Getter để RequestDispatcher có thể mượn hàng đợi của Session xử lý

@@ -9,6 +9,8 @@ import com.auction.models.Item.Item;
 import com.auction.models.User.Bidder;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.PriorityQueue;
+import java.util.Comparator;
 
 public class Auction extends Entity implements Serializable {
     private String itemId;              // Foreign Key
@@ -26,9 +28,17 @@ public class Auction extends Entity implements Serializable {
 
     private double liveStepPrice;      // Bước giá live biến động
     private int extensionCount ;    // Đếm số lần đã gia hạn thành công
+    private LocalDateTime originalEndTime; // 🔥 Thời gian kết thúc ban đầu, dùng làm mốc trần cứng Anti-sniping
 
     private transient Item item;                  // Load on-demand từ DB
     private transient Bidder highestBidder;       // Load on-demand từ DB
+    private transient PriorityQueue<AutoBid> autoBidsQueue = new PriorityQueue<>(
+        (a, b) -> {
+            int comp = Double.compare(b.getMaxBid(), a.getMaxBid());
+            if (comp != 0) return comp;
+            return a.getCreatedAt().compareTo(b.getCreatedAt());
+        }
+    );
 
     // Cấu hình Anti-sniping
     private static final int THRESHOLD_SECONDS = 30; // Nếu thầu trong 30s cuối
@@ -49,6 +59,7 @@ public class Auction extends Entity implements Serializable {
         this.status = AuctionStatus.OPEN;
         this.liveStepPrice = stepPrice;
         this.extensionCount = 0; // Khởi tạo mốc đếm bằng 0
+        this.originalEndTime = endTime; // 🔥 Lưu mốc kết thúc gốc cho Anti-sniping
 
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -75,6 +86,7 @@ public class Auction extends Entity implements Serializable {
         this.status = status;
         this.liveStepPrice = stepPrice;
         this.extensionCount = 0; // Khởi tạo mốc đếm bằng 0
+        this.originalEndTime = endTime; // 🔥 Lưu mốc kết thúc gốc cho Anti-sniping
     }
 
     // Tự động gia hạn thời gian nếu có lệnh đặt giá ở phút cuối
@@ -84,8 +96,9 @@ public class Auction extends Entity implements Serializable {
     private void checkAndExtend(LocalDateTime now) {
         if (now.plusSeconds(THRESHOLD_SECONDS).isAfter(this.endTime)) {
 
-            // 💡 CƠ CHẾ TRẦN ĐỘNG: Giới hạn tối đa 30 phút kể từ lúc tạo phiên (createdAt)
-            LocalDateTime hardCapEndTime = this.createdAt.plusMinutes(30);
+            // 💡 CƠ CHẾ TRẦN ĐỘNG: Giới hạn tối đa 30 phút kể từ thời gian kết thúc gốc (originalEndTime)
+            // 🔥 SỬa LỖI: Trước đây dùng createdAt.plusMinutes(30) gây vô hiệu hóa Anti-sniping cho phiên dài > 30 phút
+            LocalDateTime hardCapEndTime = this.originalEndTime.plusMinutes(30);
             LocalDateTime proposedEndTime = this.endTime.plusSeconds(EXTENSION_SECONDS);
 
             if (proposedEndTime.isBefore(hardCapEndTime)) {
@@ -239,5 +252,36 @@ public class Auction extends Entity implements Serializable {
 
     public void setHighestBidderId(String highestBidderId) {
         this.highestBidderId = highestBidderId;
+    }
+
+    public synchronized void addOrUpdateAutoBidInRam(AutoBid autoBid) {
+        if (autoBidsQueue == null) {
+            autoBidsQueue = new PriorityQueue<>((a, b) -> {
+                int comp = Double.compare(b.getMaxBid(), a.getMaxBid());
+                if (comp != 0) return comp;
+                return a.getCreatedAt().compareTo(b.getCreatedAt());
+            });
+        }
+        autoBidsQueue.removeIf(ab -> ab.getUserId().equals(autoBid.getUserId()));
+        if (autoBid.isActive()) {
+            autoBidsQueue.add(autoBid);
+        }
+    }
+
+    public synchronized void removeAutoBidInRam(String userId) {
+        if (autoBidsQueue != null) {
+            autoBidsQueue.removeIf(ab -> ab.getUserId().equals(userId));
+        }
+    }
+
+    public synchronized PriorityQueue<AutoBid> getAutoBidsQueue() {
+        if (autoBidsQueue == null) {
+            autoBidsQueue = new PriorityQueue<>((a, b) -> {
+                int comp = Double.compare(b.getMaxBid(), a.getMaxBid());
+                if (comp != 0) return comp;
+                return a.getCreatedAt().compareTo(b.getCreatedAt());
+            });
+        }
+        return autoBidsQueue;
     }
 }

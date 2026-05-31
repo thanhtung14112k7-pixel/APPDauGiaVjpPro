@@ -8,12 +8,23 @@ public class BidTransactionDTO implements Serializable {
     private double amount;
     private LocalDateTime time;
     private String status;
+    private LocalDateTime newEndTime;
+    private double liveStepPrice;
 
     public BidTransactionDTO(String bidderName, double amount, LocalDateTime time, String status) {
         this.bidderName = bidderName;
         this.amount = amount;
         this.time = time;
         this.status = status;
+    }
+
+    public BidTransactionDTO(String bidderName, double amount, LocalDateTime time, String status, LocalDateTime newEndTime, double liveStepPrice) {
+        this.bidderName = bidderName;
+        this.amount = amount;
+        this.time = time;
+        this.status = status;
+        this.newEndTime = newEndTime;
+        this.liveStepPrice = liveStepPrice;
     }
 
     public double getAmount() {
@@ -30,5 +41,13 @@ public class BidTransactionDTO implements Serializable {
 
     public LocalDateTime getTime() {
         return time;
+    }
+
+    public LocalDateTime getNewEndTime() {
+        return newEndTime;
+    }
+
+    public double getLiveStepPrice() {
+        return liveStepPrice;
     }
 }

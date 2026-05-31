@@ -66,10 +66,20 @@ public class RequestDispatcher {
                     return;
                 }
 
+                // 🔥 RATE LIMITER: Chặn sớm nếu Client gửi quá nhiều request trong 1 giây
+                // PING được miễn rate limit để đảm bảo keep-alive luôn hoạt động
+                if (actionType != ActionType.PING && session.isRateLimited()) {
+                    sendFailure(session, socketRequest, "Bạn đang gửi quá nhiều yêu cầu. Vui lòng chờ.", "TOO_MANY_REQUESTS");
+                    return;
+                }
+
                 // Kiểm tra phân quyền dựa trên Action chuỗi và Session
                 authorizationService.canAccess(action, session);
 
                 switch (actionType) {
+                    // 🔥 PING KEEP-ALIVE: Trả PONG ngay lập tức, không cần xử lý nghiệp vụ
+                    case PING -> sendSuccess(session, socketRequest, "PONG", null);
+
                     case LOGIN -> handleLogin(socketRequest, session);
                     case REGISTER -> handleRegister(socketRequest, session);
                     case LOGOUT -> handleLogout(socketRequest, session);
@@ -86,6 +96,8 @@ public class RequestDispatcher {
                     case GET_AUCTION_DETAIL -> handleGetAuctionDetail(socketRequest, session);
                     case CREATE_AUCTION -> handleCreateAuction(socketRequest, session);
                     case PLACE_BID -> handlePlaceBid(socketRequest, session);
+                    case SETUP_AUTO_BID -> handleSetupAutoBid(socketRequest, session);
+                    case CANCEL_AUTO_BID -> handleCancelAutoBid(socketRequest, session);
                     case LIVE_ENTERED -> handleLiveEntered(socketRequest, session);
                     case LIVE_EXITED -> handleLiveExited(socketRequest, session);
                     case AUCTION_SUBSCRIBED -> handleAuctionSubscribed(socketRequest, session);
@@ -292,6 +304,20 @@ public class RequestDispatcher {
         PlaceBidRequest request = gson.fromJson(socketRequest.getBody(), PlaceBidRequest.class);
         auctionController.placeBid(bidderId, request);
         sendSuccess(session, socketRequest, "Đặt giá thành công.", null);
+    }
+
+    private void handleSetupAutoBid(SocketRequest socketRequest, ClientSession session) {
+        String bidderId = session.getUserId();
+        SetupAutoBidRequest request = gson.fromJson(socketRequest.getBody(), SetupAutoBidRequest.class);
+        auctionController.setupAutoBid(bidderId, request);
+        sendSuccess(session, socketRequest, "Thiết lập tự động đấu giá thành công.", null);
+    }
+
+    private void handleCancelAutoBid(SocketRequest socketRequest, ClientSession session) {
+        String bidderId = session.getUserId();
+        CancelAutoBidRequest request = gson.fromJson(socketRequest.getBody(), CancelAutoBidRequest.class);
+        auctionController.cancelAutoBid(bidderId, request);
+        sendSuccess(session, socketRequest, "Hủy tự động đấu giá thành công.", null);
     }
 
     private void handleLiveEntered(SocketRequest socketRequest, ClientSession session) {

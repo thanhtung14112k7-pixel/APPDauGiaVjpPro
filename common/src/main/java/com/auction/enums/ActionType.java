@@ -70,4 +70,7 @@ public enum ActionType {
     CMD_ADMIN_GET_LOGS,          // xem danh sách log hệ thống (admin only)
     CMD_ADMIN_CANCEL_AUCTION,     // hủy phiên đấu giá (admin only)
     CMD_ADMIN_DELETE_ITEM,        // xóa vật phẩm (admin only)
+    PING,                         // keep-alive: Client gửi định kỳ để giữ kết nối Socket sống
+    SETUP_AUTO_BID,               // thiết lập tự động đấu giá (bidder)
+    CANCEL_AUTO_BID,              // hủy tự động đấu giá (bidder)
 }

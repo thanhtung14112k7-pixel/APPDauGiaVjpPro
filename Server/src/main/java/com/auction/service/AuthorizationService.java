@@ -21,7 +21,8 @@ public class AuthorizationService {
      */
     private static final Set<String> PUBLIC_ACTIONS = Set.of(
             ActionType.LOGIN.name(),
-            ActionType.REGISTER.name()
+            ActionType.REGISTER.name(),
+            ActionType.PING.name()           // Keep-alive: cho phép client chưa đăng nhập gửi PING
     );
 
     /**
@@ -63,6 +64,8 @@ public class AuthorizationService {
             Map.entry(ActionType.AUCTION_SUBSCRIBED.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.AUCTION_UNSUBSCRIBED.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.GET_MY_BID_HISTORY.name(), Set.of(UserRole.BIDDER)),   // Xem lịch sử đi chợ của cá nhân
+            Map.entry(ActionType.SETUP_AUTO_BID.name(), Set.of(UserRole.BIDDER)),        // Đăng ký thầu tự động
+            Map.entry(ActionType.CANCEL_AUTO_BID.name(), Set.of(UserRole.BIDDER)),       // Hủy thầu tự động
 
             // -----------------------------------------------------------------
             // PHÂN HỆ QUẢN TRỊ TỐI CAO (ADMIN)

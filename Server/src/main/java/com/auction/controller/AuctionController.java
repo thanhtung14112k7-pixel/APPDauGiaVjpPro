@@ -130,4 +130,17 @@ public class AuctionController {
                 request.getPageSize()
         );
     }
+
+    public void setupAutoBid(String bidderId, SetupAutoBidRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        if (request.getMaxBid() <= 0 || request.getIncrement() <= 0) {
+            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Parameters must be greater than 0.");
+        }
+        auctionService.setupAutoBid(bidderId, request.getAuctionId(), request.getMaxBid(), request.getIncrement());
+    }
+
+    public void cancelAutoBid(String bidderId, CancelAutoBidRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        auctionService.cancelAutoBid(bidderId, request.getAuctionId());
+    }
 }

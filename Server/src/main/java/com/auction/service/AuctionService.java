@@ -18,6 +18,7 @@ import com.auction.models.User.Seller;
 import com.auction.models.User.User;
 import com.auction.network.ClientSession;
 import com.auction.models.Auction.BidTransaction;
+import com.auction.models.Auction.AutoBid;
 import com.auction.models.Item.Item;
 import com.auction.models.User.Bidder;
 import com.auction.event.AuctionEvent;
@@ -131,91 +132,140 @@ public class AuctionService {
                 throw new AuctionException(AuctionErrorCode.BID_AMOUNT_TOO_LOW);
             }
 
-            String oldHighestBidderId = auction.getHighestBidderId();
-            double oldPrice = auction.getCurrentPrice();
-            LocalDateTime oldEndTime = auction.getEndTime();
+            // Thực thi đặt giá thủ công cho User
+            executeBidInternal(bidder, auction, amount);
 
-            String newBidId = UUID.randomUUID().toString();
-            Connection conn = null;
+            // Kích hoạt chuỗi đấu giá tự động để tranh chấp thầu
+            triggerAutoBids(auction);
+        }
+    }
 
-            try {
-                conn = com.auction.config.DatabaseConnection.getConnection();
-                conn.setAutoCommit(false);
+    private void executeBidInternal(Bidder bidder, Auction auction, double amount) {
+        String oldHighestBidderId = auction.getHighestBidderId();
+        double oldPrice = auction.getCurrentPrice();
+        LocalDateTime oldEndTime = auction.getEndTime();
 
-                boolean freezeSuccess = userDAO.freezeMoney(conn, bidder.getId(), amount);
-                if (!freezeSuccess) {
-                    throw new WalletException(WalletErrorCode.INSUFFICIENT_BALANCE);
+        String newBidId = UUID.randomUUID().toString();
+        Connection conn = null;
+
+        try {
+            conn = com.auction.config.DatabaseConnection.getConnection();
+            conn.setAutoCommit(false);
+
+            boolean freezeSuccess = userDAO.freezeMoney(conn, bidder.getId(), amount);
+            if (!freezeSuccess) {
+                throw new WalletException(WalletErrorCode.INSUFFICIENT_BALANCE);
+            }
+
+            BidTransaction resultBid = auction.placeBid(bidder, amount, newBidId);
+
+            boolean updateAuctionDB = auctionDAO.updatePriceAndWinner(
+                    conn, auction.getId(), amount, bidder.getId(), newBidId, auction.getEndTime(), auction.getLiveStepPrice()
+            );
+            if (!updateAuctionDB) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Sync price to database failed.");
+            }
+
+            boolean insertedBid = bidTransactionDAO.insertBid(conn, resultBid);
+            if (!insertedBid) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to persist bid transaction.");
+            }
+
+            if (oldHighestBidderId != null && !oldHighestBidderId.equals(bidder.getId())) {
+                userDAO.unfreezeMoney(conn, oldHighestBidderId, oldPrice);
+                bidTransactionDAO.updateStatusToRefunded(conn, auction.getId(), oldHighestBidderId);
+            }
+
+            if (!bidder.getJoinedAuctionIds().contains(auction.getId())) {
+                userDAO.addJoinedAuction(conn, bidder.getId(), auction.getId());
+            }
+
+            conn.commit();
+            System.out.println("[DB Transaction] ✅ Commit thành công luồng đặt giá xuống Database cho: " + bidder.getUsername() + ", Giá: " + amount);
+
+            // 1. Đồng bộ RAM cho Người đặt giá hiện tại
+            synchronized (bidder.getId().intern()) {
+                bidder.freeze(amount);
+                if (!bidder.getJoinedAuctionIds().contains(auction.getId())) {
+                    bidder.addJoinedAuction(auction.getId());
                 }
+            }
 
-                BidTransaction resultBid = auction.placeBid(bidder, amount, newBidId);
-
-                boolean updateAuctionDB = auctionDAO.updatePriceAndWinner(
-                        conn, auctionId, amount, bidder.getId(), newBidId, auction.getEndTime(), auction.getLiveStepPrice()
-                );
-                if (!updateAuctionDB) {
-                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Sync price to database failed.");
-                }
-
-                boolean insertedBid = bidTransactionDAO.insertBid(conn, resultBid);
-                if (!insertedBid) {
-                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to persist bid transaction.");
-                }
-
-                if (oldHighestBidderId != null && !oldHighestBidderId.equals(bidder.getId())) {
-                    userDAO.unfreezeMoney(conn, oldHighestBidderId, oldPrice);
-                    bidTransactionDAO.updateStatusToRefunded(conn, auctionId, oldHighestBidderId);
-                }
-
-                if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
-                    userDAO.addJoinedAuction(conn, bidder.getId(), auctionId);
-                }
-
-                conn.commit();
-                System.out.println("[DB Transaction] ✅ Commit thành công luồng đặt giá xuống Database.");
-
-                // 1. Đồng bộ RAM cho Người đặt giá hiện tại (Giữ nguyên của bạn)
-                synchronized (bidder.getId().intern()) {
-                    bidder.freeze(amount);
-                    if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
-                        bidder.addJoinedAuction(auctionId);
+            // 2. Đồng bộ RAM cho người bị vượt giá cũ
+            if (oldHighestBidderId != null && !oldHighestBidderId.equals(bidder.getId())) {
+                User oldRamUser = com.auction.manage.UserManage.getInstance().getUser(oldHighestBidderId);
+                if (oldRamUser instanceof Bidder oldBidderLive) {
+                    synchronized (oldHighestBidderId.intern()) {
+                        oldBidderLive.setAvailableBalance(oldBidderLive.getAvailableBalance() + oldPrice);
+                        oldBidderLive.setFrozenBalance(oldBidderLive.getFrozenBalance() - oldPrice);
+                        System.out.println("[RAM Sync] 🔄 Đã hoàn tiền trên RAM cho người bị vượt giá cũ: " + oldHighestBidderId);
                     }
                 }
+            }
 
-                // 🔥 2. ĐỒNG BỘ RAM CHO NGƯỜI BỊ VƯỢT GIÁ CŨ (Bổ sung theo ảnh nhận xét)
-                if (oldHighestBidderId != null && !oldHighestBidderId.equals(bidder.getId())) {
-                    User oldRamUser = com.auction.manage.UserManage.getInstance().getUser(oldHighestBidderId);
-                    if (oldRamUser instanceof Bidder oldBidderLive) {
-                        synchronized (oldHighestBidderId.intern()) {
-                            // Trả lại tiền khả dụng và trừ tiền đóng băng trên RAM live tức thì
-                            oldBidderLive.setAvailableBalance(oldBidderLive.getAvailableBalance() + oldPrice);
-                            oldBidderLive.setFrozenBalance(oldBidderLive.getFrozenBalance() - oldPrice);
-                            System.out.println("[RAM Sync] 🔄 Đã hoàn tiền trên RAM cho người bị vượt giá cũ: " + oldHighestBidderId);
+            // 3. Đóng gói payload chứa thông tin Anti-sniping
+            BidTransactionDTO bidData = new BidTransactionDTO(
+                    bidder.getUsername(), amount, LocalDateTime.now(), com.auction.enums.BidStatus.ACCEPTED.name(),
+                    auction.getEndTime(), auction.getLiveStepPrice()
+            );
+
+            AuctionEvent bidEvent = new AuctionEvent(auction.getId(), AuctionEventType.NEW_BID, bidData);
+            AuctionEventBus.getInstance().publish(bidEvent);
+
+        } catch (Exception e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+
+            auction.rollbackBidInRam(oldHighestBidderId, oldPrice, oldEndTime);
+
+            if (e instanceof com.auction.exception.BaseException) throw (com.auction.exception.BaseException) e;
+            throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Fatal crash during executeBidInternal: " + e.getMessage());
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+        }
+    }
+
+    private void triggerAutoBids(Auction auction) {
+        int loops = 0;
+        // Giới hạn tối đa 20 lượt đấu giá tự động liên tiếp để tránh loop vô tận ngoài ý muốn
+        while (loops < 20) {
+            AutoBid challenger = null;
+            double minBidRequired = auction.getCurrentPrice() + auction.getLiveStepPrice();
+
+            PriorityQueue<AutoBid> queue = auction.getAutoBidsQueue();
+            synchronized (queue) {
+                for (AutoBid ab : queue) {
+                    if (!ab.getUserId().equals(auction.getHighestBidderId()) && ab.getMaxBid() >= minBidRequired) {
+                        if (challenger == null || ab.getMaxBid() > challenger.getMaxBid()) {
+                            challenger = ab;
                         }
                     }
                 }
-
-                BidTransactionDTO bidData = new BidTransactionDTO(
-                        bidder.getUsername(), amount, LocalDateTime.now(), com.auction.enums.BidStatus.ACCEPTED.name()
-                );
-
-                AuctionEvent bidEvent = new AuctionEvent(auctionId, AuctionEventType.NEW_BID, bidData);
-                AuctionEventBus.getInstance().publish(bidEvent);
-                System.out.println("[AuctionService] 📢 Đặt giá thành công. Broadcast NEW_BID event.");
-
-            } catch (Exception e) {
-                if (conn != null) {
-                    try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-                }
-
-                auction.rollbackBidInRam(oldHighestBidderId, oldPrice, oldEndTime);
-
-                if (e instanceof com.auction.exception.BaseException) throw (com.auction.exception.BaseException) e;
-                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Fatal crash during processBid: " + e.getMessage());
-            } finally {
-                if (conn != null) {
-                    try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ex) { ex.printStackTrace(); }
-                }
             }
+
+            if (challenger == null) {
+                break;
+            }
+
+            // Thực thi đặt giá cho Challenger
+            try {
+                Bidder challengerBidder = getBidderContext(challenger.getUserId());
+                executeBidInternal(challengerBidder, auction, minBidRequired);
+            } catch (Exception e) {
+                System.err.println("[Auto-Bidding] ❌ Lượt thầu tự động của user " + challenger.getUserId() + " thất bại: " + e.getMessage());
+                // Vô hiệu hóa auto bid nếu xảy ra lỗi (ví dụ không đủ tiền) để tránh spam
+                challenger.setActive(false);
+                try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
+                    autoBidDAO.disableAutoBid(conn, challenger.getId());
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+                queue.remove(challenger);
+            }
+            loops++;
         }
     }
 
@@ -375,6 +425,13 @@ public class AuctionService {
             List<Auction> activeAuctionsFromDb = auctionDAO.findByStatuses(conn, activeStatuses);
             for (Auction auction : activeAuctionsFromDb) {
                 itemDAO.findById(auction.getItemId()).ifPresent(auction::setItem);
+                
+                // Hydrate active auto-bids into the auction RAM queue
+                List<AutoBid> activeAutoBids = autoBidDAO.findActiveByAuctionId(conn, auction.getId());
+                for (AutoBid autoBid : activeAutoBids) {
+                    auction.addOrUpdateAutoBidInRam(autoBid);
+                }
+                
                 auctionManage.addAuction(auction);
             }
             System.out.println("Hệ thống: Đã nạp thành công " + activeAuctionsFromDb.size() + " phiên đấu giá lên RAM.");
@@ -667,5 +724,94 @@ public class AuctionService {
             throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "The requested operation restriction rule requires a BIDDER profile scope.");
         }
         return (Bidder) user;
+    }
+
+    private final AutoBidDAO autoBidDAO = new AutoBidDAOImpl();
+
+    public void setupAutoBid(String bidderId, String auctionId, double maxBid, double increment) {
+        Bidder bidder = getBidderContext(bidderId);
+        if (auctionId == null || auctionId.trim().isEmpty()) {
+            throw new ValidationException(ValidationErrorCode.MISSING_REQUIRED_FIELD, "Auction ID cannot be empty.");
+        }
+        if (maxBid <= 0 || increment <= 0) {
+            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Max bid and increment must be greater than zero.");
+        }
+
+        Auction auction = getAuctionContext(auctionId);
+
+        synchronized (auction) {
+            if (auction.getStatus() != AuctionStatus.OPEN && auction.getStatus() != AuctionStatus.RUNNING) {
+                throw new AuctionException(AuctionErrorCode.AUCTION_NOT_RUNNING);
+            }
+            if (bidder.getId().equals(auction.getSellerId())) {
+                throw new AuctionException(AuctionErrorCode.BIDDER_IS_SELLER);
+            }
+            if (maxBid < auction.getCurrentPrice() + auction.getStepPrice()) {
+                throw new AuctionException(AuctionErrorCode.BID_AMOUNT_TOO_LOW, "Max bid must be at least the next required bid.");
+            }
+
+            AutoBid autoBid = new AutoBid(bidder.getId(), auctionId, maxBid, increment);
+
+            try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
+                conn.setAutoCommit(false);
+                boolean success = autoBidDAO.insertOrUpdate(conn, autoBid);
+                if (!success) {
+                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to save auto-bid configuration.");
+                }
+
+                // Auto watch/join auction in DB
+                if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
+                    userDAO.addJoinedAuction(conn, bidder.getId(), auctionId);
+                }
+
+                conn.commit();
+            } catch (SQLException e) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Setup auto-bid failed: " + e.getMessage());
+            }
+
+            // Sync RAM
+            synchronized (bidder.getId().intern()) {
+                if (!bidder.getJoinedAuctionIds().contains(auctionId)) {
+                    bidder.addJoinedAuction(auctionId);
+                }
+            }
+            auction.addOrUpdateAutoBidInRam(autoBid);
+            System.out.println("[Auto-Bidding] ✅ Đã thiết lập Auto-Bid cho User: " + bidder.getUsername() + ", Max: " + maxBid);
+
+            // Trigger thầu tự động ngay lập tức nếu người dùng này hiện tại không phải người dẫn đầu
+            // và phiên đang chạy.
+            if (auction.getStatus() == AuctionStatus.RUNNING && !bidder.getId().equals(auction.getHighestBidderId())) {
+                triggerAutoBids(auction);
+            }
+        }
+    }
+
+    public void cancelAutoBid(String bidderId, String auctionId) {
+        Bidder bidder = getBidderContext(bidderId);
+        if (auctionId == null || auctionId.trim().isEmpty()) {
+            throw new ValidationException(ValidationErrorCode.MISSING_REQUIRED_FIELD, "Auction ID cannot be empty.");
+        }
+
+        Auction auction = getAuctionContext(auctionId);
+
+        synchronized (auction) {
+            try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
+                conn.setAutoCommit(false);
+                Optional<AutoBid> opt = autoBidDAO.findActiveByUserAndAuction(conn, bidder.getId(), auctionId);
+                if (opt.isPresent()) {
+                    AutoBid autoBid = opt.get();
+                    autoBidDAO.disableAutoBid(conn, autoBid.getId());
+                    conn.commit();
+                } else {
+                    conn.rollback();
+                }
+            } catch (SQLException e) {
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Cancel auto-bid failed: " + e.getMessage());
+            }
+
+            // Sync RAM
+            auction.removeAutoBidInRam(bidder.getId());
+            System.out.println("[Auto-Bidding] ❌ Đã hủy Auto-Bid cho User: " + bidder.getUsername());
+        }
     }
 }
