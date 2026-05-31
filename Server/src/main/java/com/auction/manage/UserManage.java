@@ -38,7 +38,12 @@ public class UserManage {
      * Thêm người dùng mới vào hệ thống (Khi Đăng nhập hoặc Đăng ký thành công)
      */
     public boolean addUser(User user) throws AuthenticationException {
-        if (user == null) return false;
+        if (user == null) {
+            throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
+        }
+        if (user.getUsername() == null || user.getEmail() == null) {
+            throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
+        }
 
         // Kiểm tra trùng lặp thông tin an toàn qua các map phụ
         this.isUsernameExists(user.getUsername());

@@ -19,8 +19,8 @@ public class SocketServer {
     private static final int PORT = 5555;
     private static final int MAX_CLIENTS = 300; // Trần cứng khống chế quy mô hệ thống
 
-    // Cấp phát một "đội quân" 50 luồng chạy sẵn
-    private final ExecutorService threadPool = Executors.newFixedThreadPool(50);
+    // Sử dụng Virtual Threads (luồng ảo) của Java để xử lý số lượng client không giới hạn, tránh nghẽn thread pool
+    private final ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
     public void start() {
         System.out.println("[Server] Đang chạy tại port " + PORT);
 

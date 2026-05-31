@@ -290,9 +290,11 @@ class AuctionServiceTest {
         auctionManage.addAuction(auction);
 
         Bidder bidder = new Bidder("bidder-offline", "khach", "k@gmail.com", "P@ss123", UserRole.BIDDER, 5000.0, 0.0, UserStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
-        setBidderOnline("bidder-offline", false); // Ép trạng thái Offline trên RAM thật
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
+        setBidderOnline("bidder-offline", false);
 
-        AuctionException exception = assertThrows(AuctionException.class, () -> auctionService.processBid(bidder, "auction-1", 200000.0));
+        AuctionException exception = assertThrows(AuctionException.class, () -> auctionService.processBid(bidder.getId(), "auction-1", 200000.0));
         assertAuctionError(exception, AuctionErrorCode.BIDDER_NOT_ONLINE);
     }
 
@@ -304,9 +306,12 @@ class AuctionServiceTest {
         auctionManage.addAuction(auction);
 
         Bidder bidder = new Bidder("bidder-1", "khach", "k@gmail.com", "P@ss123", UserRole.BIDDER, 50000000.0, 0.0, UserStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
-        setBidderOnline("bidder-1", true); // Ép trạng thái Online trên RAM thật
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
+        setBidderOnline("bidder-1", true);
 
-        AuctionException exception = assertThrows(AuctionException.class, () -> auctionService.processBid(bidder, "auction-live", 12050000.0));
+        AuctionException exception = assertThrows(AuctionException.class, () -> auctionService.processBid(bidder.getId(), "auction-live", 12050000.0));
         assertAuctionError(exception, AuctionErrorCode.BID_AMOUNT_TOO_LOW);
     }
 
@@ -324,7 +329,7 @@ class AuctionServiceTest {
         when(auctionDAO.updatePriceAndWinner(any(Connection.class), eq("auction-rollback"), anyDouble(), eq("bidder-fail-db"), anyString(), any(), anyDouble())).thenReturn(true);
         when(bidTransactionDAO.insertBid(any(Connection.class), any())).thenThrow(new SQLException("Crash Disk I/O"));
 
-        assertThrows(AuctionException.class, () -> auctionService.processBid(bidder, "auction-rollback", 13000000.0));
+        assertThrows(AuctionException.class, () -> auctionService.processBid(bidder.getId(), "auction-rollback", 13000000.0));
 
         assertNull(auction.getHighestBidderId());
         assertEquals(12000000.0, auction.getCurrentPrice());
@@ -378,8 +383,9 @@ class AuctionServiceTest {
         auctionManage.addAuction(auction);
 
         Bidder bidder = new Bidder("bidder-leading-123", "khach", "k@gmail.com", "P@ss123", UserRole.BIDDER, 5000.0, 0.0, UserStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
-
-        AuctionException exception = assertThrows(AuctionException.class, () -> auctionService.leaveAuction(bidder, "auction-leave", null));
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
+        AuctionException exception = assertThrows(AuctionException.class, () -> auctionService.leaveAuction(bidder.getId(), "auction-leave", null));
         assertAuctionError(exception, AuctionErrorCode.CANNOT_UNWATCH_LEADING_AUCTION);
     }
 
@@ -394,7 +400,7 @@ class AuctionServiceTest {
         when(auctionDAO.findById("auction-cancel")).thenReturn(Optional.of(auction));
         when(itemDAO.updateStatus(any(Connection.class), eq("item-cancel-test"), eq(ItemStatus.ACTIVE.name()))).thenReturn(true);
 
-        assertDoesNotThrow(() -> auctionService.cancelAuction("auction-cancel", "admin-007", "Sản phẩm nằm trong danh mục cấm đăng bán"));
+        assertDoesNotThrow(() -> auctionService.cancelAuction("auction-cancel", "admin-007",UserRole.ADMIN, "Sản phẩm nằm trong danh mục cấm đăng bán"));
 
         verify(userDAO).unfreezeMoney(any(Connection.class), eq("winner-to-refund"), anyDouble());
         verify(bidTransactionDAO).updateStatusToRefunded(any(Connection.class), eq("auction-cancel"), eq("winner-to-refund"));
@@ -411,7 +417,9 @@ class AuctionServiceTest {
     @Test
     void getJoinedAuctionsSummaryShouldReturnEmptyListWhenBidderJoinedNothing() {
         Bidder bidder = new Bidder("bidder1", "bidder1@example.com", "hashed-password");
-        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder);
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
+        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder.getId());
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
@@ -424,9 +432,11 @@ class AuctionServiceTest {
         Item item = sampleItem("item-summary-1");
         Auction auction = sampleAuction("auction-1", item);
 
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
         when(auctionDAO.findById("auction-1")).thenReturn(Optional.of(auction));
 
-        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder);
+        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder.getId());
 
         assertEquals(1, result.size());
         AuctionSummaryDTO dto = result.getFirst();
@@ -440,9 +450,11 @@ class AuctionServiceTest {
         Bidder bidder = new Bidder("bidder1", "bidder1@example.com", "hashed-password");
         bidder.addJoinedAuction("missing-auction");
 
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
         when(auctionDAO.findById("missing-auction")).thenReturn(Optional.empty());
 
-        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder);
+        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder.getId());
 
         assertNotNull(result);
         assertTrue(result.isEmpty());
@@ -457,9 +469,11 @@ class AuctionServiceTest {
         Auction auction = sampleAuction("auction-no-item", item);
         auction.setItem(null);
 
+        // Mồi Mock bypass hàng rào trích xuất ngữ cảnh bảo mật
+        when(userDAO.findById(bidder.getId())).thenReturn(Optional.of(bidder));
         when(auctionDAO.findById("auction-no-item")).thenReturn(Optional.of(auction));
 
-        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder);
+        List<AuctionSummaryDTO> result = auctionService.getJoinedAuctionsSummary(bidder.getId());
 
         assertEquals(1, result.size());
         assertEquals("Vật phẩm #" + auction.getItemId(), result.getFirst().getItemName());

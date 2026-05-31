@@ -46,6 +46,10 @@ public interface UserDAO {
 
     List<User> findPaginated(int limit, int offset);
 
+    /**
+     * Đếm tổng số người dùng trong hệ thống
+     */
+    long countTotalUsers();
 
     // 🔥 SỬA: Nhận Connection từ ngoài truyền vào (để bọc lót Transaction cưỡng chế Kick/Ban từ Admin), ném SQLException ra ngoài
     boolean updateStatus(Connection conn, String userId, String name) throws SQLException;

@@ -128,4 +128,8 @@ public abstract class User extends Entity {
     public void setPassword(String password) {
         this.password = password;
     }
+
+    public void setFrozenBalance(double frozenBalance) {
+        this.frozenBalance = frozenBalance;
+    }
 }

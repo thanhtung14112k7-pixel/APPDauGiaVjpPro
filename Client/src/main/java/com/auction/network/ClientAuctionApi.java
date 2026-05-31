@@ -134,9 +134,9 @@ public class ClientAuctionApi {
     /**
      * Gửi request hủy một phiên đấu giá.
      */
-    public SocketResponse cancelAuction(String auctionId, String reason) {
-        CancelAuctionRequest request = new CancelAuctionRequest(auctionId, reason);
-        return sendRequest(ActionType.CANCEL_AUCTION, request);
+    public SocketResponse cancelAuction(String auctionId, String reason,String userId) {
+        CancelAuctionRequest request = new CancelAuctionRequest(auctionId, reason, userId);
+        return sendRequest(ActionType.SELLER_CANCEL_AUCTION, request);
     }
 
     /**

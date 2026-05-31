@@ -10,19 +10,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- AuthorizationService chịu trách nhiệm kiểm tra phân quyền phía Server
- Class này trả lời câu hỏi: "User hiện tại có được phép thực hiện action hay ko?"
-
- -DashboardController chỉ ẩn/hiện button ở Client.
- - Client không đáng tin tuyệt đối vì người dùng có thể sửa request.
- - Vì vậy mọi action quan trọng đều phải được Server kiểm tra lại.
+ * =========================================================================
+ * AuthorizationService - Trung tâm kiểm soát và phân quyền tối cao phía Server
+ * =========================================================================
  */
-
 public class AuthorizationService {
+
     /**
-     Action này ko cần login
-     Ví dụ: LOGIN: chưa đăng nhập thì cần login
-     REGISTER: người dùng chưa có tài khoản vẫn được đăng kí
+     * 1. PUBLIC ACTIONS: Hoàn toàn mở, không cần check Session đăng nhập
      */
     private static final Set<String> PUBLIC_ACTIONS = Set.of(
             ActionType.LOGIN.name(),
@@ -30,71 +25,91 @@ public class AuthorizationService {
     );
 
     /**
-     Action chỉ cần user đã đăng nhập, ko phân biệt role
+     * 2. LOGIN REQUIRED ACTIONS: Chỉ cần đăng nhập thành công là có quyền gọi,
+     * không phân biệt vai trò (Bao gồm cả các tính năng xem thông tin chung mới bổ sung)
      */
     private static final Set<String> LOGIN_REQUIRED_ACTIONS = Set.of(
             ActionType.LOGOUT.name(),
             ActionType.GET_ACTIVE_AUCTIONS.name(),
-            ActionType.GET_AUCTION_DETAIL.name()
+            ActionType.GET_AUCTION_DETAIL.name(),
+            ActionType.GET_USER_PROFILE.name(),        // Ai cũng có quyền xem profile của chính mình
+            ActionType.GET_AUCTION_BID_HISTORY.name()  // Lịch sử đặt giá phòng live mở công khai cho mọi người xem
     );
 
     /**
-     Phân quyền theo role dùng Map với Key: tên action Client gửi lên
-     Value: danh sách role được phép thực hiện action
+     * 3. ROLE PERMISSIONS: Whitelist kiểm soát nghiêm ngặt theo từng Actor đặc thù.
+     * Chia nhóm rõ ràng để sau này hệ thống phình to ra vẫn cực kỳ dễ bảo trì.
      */
     private static final Map<String, Set<UserRole>> ROLE_PERMISSIONS = Map.ofEntries(
-            Map.entry(ActionType.CREATE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
-            Map.entry(ActionType.UPDATE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
-            Map.entry(ActionType.DELETE_ITEM.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
-            Map.entry(ActionType.GET_SELLER_ITEMS.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
+            // -----------------------------------------------------------------
+            // PHÂN HỆ DÀH CHO NGƯỜI BÁN (SELLER)
+            // -----------------------------------------------------------------
+            Map.entry(ActionType.CREATE_ITEM.name(), Set.of(UserRole.SELLER)),
+            Map.entry(ActionType.UPDATE_ITEM.name(), Set.of(UserRole.SELLER)),
+            Map.entry(ActionType.GET_SELLER_ITEMS.name(), Set.of(UserRole.SELLER)),
             Map.entry(ActionType.GET_ITEM_DETAIL.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
-            Map.entry(ActionType.CREATE_AUCTION.name(), Set.of(UserRole.SELLER, UserRole.ADMIN)),
-            Map.entry(ActionType.CANCEL_AUCTION.name(), Set.of( UserRole.ADMIN)),
+            Map.entry(ActionType.CREATE_AUCTION.name(), Set.of(UserRole.SELLER)),
+            Map.entry(ActionType.SELLER_CANCEL_AUCTION.name(), Set.of(UserRole.SELLER)), // Seller tự hủy phòng trống
+            Map.entry(ActionType.SELLER_DELETE_ITEM.name(), Set.of(UserRole.SELLER)),   // Seller tự xóa sản phẩm chưa đấu giá
+
+            // -----------------------------------------------------------------
+            // PHÂN HỆ DÀNH CHO NGƯỜI ĐẤU GIÁ (BIDDER)
+            // -----------------------------------------------------------------
+            Map.entry(ActionType.DEPOSIT_MONEY.name(), Set.of(UserRole.BIDDER)),
+            Map.entry(ActionType.WITHDRAW_MONEY.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.PLACE_BID.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.LIVE_ENTERED.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.LIVE_EXITED.name(), Set.of(UserRole.BIDDER)),
             Map.entry(ActionType.AUCTION_SUBSCRIBED.name(), Set.of(UserRole.BIDDER)),
-            Map.entry(ActionType.AUCTION_UNSUBSCRIBED.name(), Set.of(UserRole.BIDDER))
+            Map.entry(ActionType.AUCTION_UNSUBSCRIBED.name(), Set.of(UserRole.BIDDER)),
+            Map.entry(ActionType.GET_MY_BID_HISTORY.name(), Set.of(UserRole.BIDDER)),   // Xem lịch sử đi chợ của cá nhân
+
+            // -----------------------------------------------------------------
+            // PHÂN HỆ QUẢN TRỊ TỐI CAO (ADMIN)
+            // -----------------------------------------------------------------
+            Map.entry(ActionType.CMD_ADMIN_GET_USERS.name(), Set.of(UserRole.ADMIN)),
+            Map.entry(ActionType.CMD_ADMIN_LOCK_USER.name(), Set.of(UserRole.ADMIN)),
+            Map.entry(ActionType.CMD_ADMIN_CANCEL_AUCTION.name(), Set.of(UserRole.ADMIN)), // Admin cưỡng chế hủy
+            Map.entry(ActionType.CMD_ADMIN_DELETE_ITEM.name(), Set.of(UserRole.ADMIN)),   // Admin cưỡng chế hạ tải
+            Map.entry(ActionType.CMD_ADMIN_GET_LOGS.name(), Set.of(UserRole.ADMIN))       // Xem nhật ký hệ thống
     );
 
     /**
-     Kiểm tra session hiện tai có được phép chạy action hay ko
+     * Kiểm tra phiên Session hiện tại có đủ thẩm quyền thực thi tác vụ hay không
      */
-    public void canAccess(String action, ClientSession session){
-        // Kiểm tra tính hợp lệ thô của chuỗi hành động gửi lên
+    public void canAccess(String action, ClientSession session) {
         if (action == null || action.trim().isEmpty()) {
             throw new AuthorizationException(AuthorizationErrorCode.ACTION_UNAUTHORIZED, "Action type cannot be null or empty");
         }
 
-        // LOGIN và REGISTER không cần đăng nhập -> Cho qua ngay lập tức
+        // Bước 1: Cho qua ngay nếu là Action công khai hoàn toàn
         if (PUBLIC_ACTIONS.contains(action)) {
             return;
         }
 
-        // Kiểm tra xem User đã thiết lập Session đăng nhập hợp lệ chưa
+        // Bước 2: Chặn cưỡng chế nếu chưa thiết lập trạng thái Session hợp lệ
         if (session == null || !session.isLoggedIn()) {
             throw new AuthorizationException(AuthorizationErrorCode.NOT_AUTHENTICATED);
         }
 
-        // Các action chỉ cần login, không cần xét quyền hạn vai trò cụ thể -> Cho qua
+        // Bước 3: Cho qua nếu Action chỉ yêu cầu duy nhất điều kiện đã đăng nhập
         if (LOGIN_REQUIRED_ACTIONS.contains(action)) {
             return;
         }
 
-        // Bốc tách danh sách cấu hình phân quyền vai trò cho Action tương ứng
+        // Bước 4: Trích xuất cấu hình quyền hạn nghiêm ngặt theo Role
         Set<UserRole> allowedRoles = ROLE_PERMISSIONS.get(action);
 
-        // Nếu action không nằm trong danh mục cấu hình, mặc định chặn cứng để bảo vệ hệ thống
+        // Chốt chặn an toàn (Fail-Safe): Nếu Action lạ chưa được khai báo ở trên, cấm tuyệt đối truy cập
         if (allowedRoles == null) {
             System.err.println("[Guard] 🚨 Cảnh báo bảo mật: Phát hiện request gọi Action chưa được cấu hình: " + action);
             throw new AuthorizationException(AuthorizationErrorCode.ACTION_UNAUTHORIZED);
         }
 
-        // Kiểm tra xem Vai trò hiện tại của Session có nằm trong Whitelist được cho phép hay không
+        // Bước 5: Kiểm tra xem vai trò của Session có nằm trong Whitelist cho phép hay không
         if (!allowedRoles.contains(session.getRole())) {
             System.err.println("[Guard] ⛔ Từ chối truy cập: User [" + session.getUserId()
                     + "] mang Role [" + session.getRole() + "] cố tình gọi Action hạn chế [" + action + "]");
-
             throw new AuthorizationException(AuthorizationErrorCode.ROLE_ACCESS_DENIED);
         }
     }

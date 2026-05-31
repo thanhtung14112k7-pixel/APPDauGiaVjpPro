@@ -116,7 +116,7 @@ public class UserService {
     /**
      * TÍNH NĂNG MÀN HÌNH QUẢN LÝ CỦA ADMIN
      */
-    public List<UserDTO> getAdminUserDashboard(int page, int pageSize) {
+    public PageDTO<UserDTO> getAdminUserDashboard(int page, int pageSize) {
         if (page <= 0 || pageSize <= 0) {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Frame page metrics parameters must be positive.");
         }
@@ -134,7 +134,23 @@ public class UserService {
                 dtoDashboardList.add(dto);
             }
         }
-        return dtoDashboardList;
+        // Đưa logic tính toán phân trang từ Controller về đây
+        long totalUsers = userDAO.countTotalUsers();
+        int totalPages = (int) Math.ceil((double) totalUsers / pageSize);
+
+        return new PageDTO<>(dtoDashboardList, page, totalPages, totalUsers);
+    }
+
+    /**
+     * LẤY THÔNG TIN PROFILE DƯỚI DẠNG DTO ĐA HÌNH
+     */
+    public UserDTO getUserProfile(String userId) {
+        User user = getOrLoadUser(userId);
+        if (user == null) {
+            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "User not found.");
+        }
+        User ramUser = userManage.getUser(userId);
+        return getUserDTO(user, ramUser);
     }
 
     @Nullable
@@ -158,7 +174,7 @@ public class UserService {
     }
 
     /**
-     * TÍNH NĂNG KHÓA TÀI KHOẢN TỨC THÌ CỦA ADMIN
+     * TÍNH NĂNG KHÓA TÀI KHOẢN TỨC THÌ CỦA ADMIN (Đã tối ưu Polite Close)
      */
     public void lockUserAccount(String adminId, String userId, UserStatus targetStatus) {
         if (userId == null || userId.trim().isEmpty() || targetStatus == null || adminId == null || adminId.trim().isEmpty()) {
@@ -169,43 +185,33 @@ public class UserService {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Target state specification error. Restriction level must be BANNED.");
         }
 
-        synchronized (userId.trim().intern()) {
+        final String cleanUserId = userId.trim();
 
-            // 🔥 SỬA: Bọc quy trình cập nhật trạng thái và ghi Audit Log vào chung một Database Transaction
+        synchronized (cleanUserId.intern()) {
+            // [ĐOẠN CODE TRANSACTION DATABASE - GIỮ NGUYÊN HOÀN TOÀN CỦA BẠN]
             Connection conn = null;
             try {
                 conn = com.auction.config.DatabaseConnection.getConnection();
-                conn.setAutoCommit(false); // Bật transaction nguyên tử
+                conn.setAutoCommit(false);
 
-                // 1. Cập nhật trạng thái người dùng (Truyền conn)
-                boolean isUpdatedDB = userDAO.updateStatus(conn, userId, targetStatus.name());
+                boolean isUpdatedDB = userDAO.updateStatus(conn, cleanUserId, targetStatus.name());
                 if (!isUpdatedDB) {
                     throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
                 }
 
-                // 2. Ghi nhật ký hành động phục vụ mục đích Audit Log (Truyền conn vào chung mạch transaction)
                 String logId = UUID.randomUUID().toString();
                 String actionDetail = "Admin thay đổi trạng thái tài khoản người dùng sang: " + targetStatus.name();
-                logDAO.insertLog(conn, logId, adminId, actionDetail, "USER", userId);
+                logDAO.insertLog(conn, logId, adminId, actionDetail, "USER", cleanUserId);
 
-                conn.commit(); // Thành công trọn vẹn cả 2 bước thì chốt hạ lưu vĩnh viễn
+                conn.commit();
                 System.out.println("[DB Transaction] ✅ Khóa tài khoản và ghi Audit Log thành công.");
 
             } catch (Exception e) {
                 if (conn != null) {
-                    try {
-                        conn.rollback(); // Nếu gãy bất kỳ mắt xích nào, lập tức hủy bỏ lệnh cập nhật để tránh rách dữ liệu log
-                        System.err.println("[DB Transaction] ❌ Thất bại khi thực thi khóa tài khoản. Đã thực hiện Rollback DB!");
-                    } catch (SQLException ex) {
-                        System.err.println("[DB Transaction] 🚨 Lỗi khẩn cấp không thể rollback: " + ex.getMessage());
-                    }
+                    try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
                 }
-
-                if (e instanceof com.auction.exception.BaseException) {
-                    throw (com.auction.exception.BaseException) e;
-                }
+                if (e instanceof com.auction.exception.BaseException) throw (com.auction.exception.BaseException) e;
                 throw new AuthenticationException(AuthErrorCode.USER_NOT_FOUND);
-
             } finally {
                 if (conn != null) {
                     try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ex) { ex.printStackTrace(); }
@@ -213,16 +219,38 @@ public class UserService {
             }
 
             // 3. Đồng bộ hóa lên đối tượng trạng thái RAM live sau khi Transaction DB hạ cánh an toàn
-            User ramUser = userManage.getUser(userId);
+            User ramUser = userManage.getUser(cleanUserId);
             if (ramUser != null) {
                 ramUser.setStatus(targetStatus);
             }
 
-            // Cưỡng chế ngắt kết nối Socket và hủy phiên làm việc ngay lập tức trên hệ thống RAM Core
-            if (connectionManage.isUserOnline(userId)) {
-                connectionManage.sendMessageToUser(userId, "FORCE_LOGOUT_REASON: ACCOUNT_LOCKED");
-                connectionManage.forceDisconnectUser(userId);
-                userManage.deleteUser(userId);
+            // =========================================================================
+            // 🔥 TỐI ƯU THEO CÁCH 2: PHỐI HỢP CLIENT - SERVER (POLITE CLOSE)
+            // =========================================================================
+            if (connectionManage.isUserOnline(cleanUserId)) {
+
+                // Bước 1: Gửi thông điệp cảnh báo cho Client biết.
+                // Client nhận được chuỗi này phải hiện Dialog thông báo lập tức và tự đóng socket phía nó.
+                connectionManage.sendMessageToUser(cleanUserId, "FORCE_LOGOUT_REASON: ACCOUNT_LOCKED");
+
+                // Bước 2: Tạo một luồng chạy ẩn, hoãn lại 300ms để bọc hậu (Chốt chặn tối cao)
+                // Việc hoãn ẩn này giúp hàm thoát ra ngay lập tức, Admin không bị treo màn hình đợi.
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor().schedule(() -> {
+                    try {
+                        // Nếu sau 300ms mà Client vẫn chưa tự ngắt kết nối (hoặc cố tình lỳ ra)
+                        if (connectionManage.isUserOnline(cleanUserId)) {
+                            System.out.println("[Security Guard] 🚨 Client không tự đóng, tiến hành cưỡng chế rút phích cắm: " + cleanUserId);
+                            connectionManage.forceDisconnectUser(cleanUserId);
+                        }
+
+                        // Dọn dẹp dứt điểm bộ nhớ RAM Cache của User này
+                        userManage.deleteUser(cleanUserId);
+                        System.out.println("[Security Guard] 🎯 Đã dọn dẹp sạch sẽ session và bộ nhớ của user bị ban: " + cleanUserId);
+
+                    } catch (Exception e) {
+                        System.err.println("[Security Guard] Lỗi khi thực thi bọc hậu ngắt socket: " + e.getMessage());
+                    }
+                }, 300, java.util.concurrent.TimeUnit.MILLISECONDS); // 300ms là quá đủ cho gói tin TCP truyền đi thành công
             }
         }
     }

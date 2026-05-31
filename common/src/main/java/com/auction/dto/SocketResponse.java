@@ -1,7 +1,7 @@
 package com.auction.dto;
 
 import com.auction.enums.ActionType;
-import com.google.gson.Gson;
+import com.auction.utils.GsonProvider;
 import com.google.gson.JsonElement;
 
 /**
@@ -29,7 +29,7 @@ public class SocketResponse {
     private String errorCode;
     private JsonElement body;
 
-    private static final Gson gson = new Gson();
+    private static final com.google.gson.Gson gson = GsonProvider.getGson();
 
     /**
      * Constructor rỗng cần cho Gson.

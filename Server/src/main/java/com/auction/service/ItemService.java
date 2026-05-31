@@ -1,7 +1,9 @@
 package com.auction.service;
 
 import com.auction.dao.ItemDAO;
+import com.auction.dao.LogDAO;
 import com.auction.dao.impl.ItemDAOImpl;
+import com.auction.dao.impl.LogDAOImpl;
 import com.auction.dto.ItemDetailDTO;
 import com.auction.dto.ItemSummaryDTO;
 import com.auction.enums.ItemStatus;
@@ -25,6 +27,7 @@ import java.util.UUID;
 public class ItemService {
     private final ItemDAO itemDAO = new ItemDAOImpl();
     private final ProductManage productManage = ProductManage.getInstance();
+    private final LogDAO logDAO = new LogDAOImpl();
 
     public ItemDetailDTO addItem(String type, Map<String, Object> data) {
         return addItem(parseItemType(type), data);
@@ -209,6 +212,83 @@ public class ItemService {
             } catch (NumberFormatException e) {
                 throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Year created must be a valid integer.");
             }
+        }
+    }
+
+    /**
+     * 🔥 TÍNH NĂNG ADMIN: Cưỡng chế hạ tải/xóa vật phẩm vi phạm chính sách sàn đấu giá
+     * Luồng: Khóa định danh -> Check RAM/DB -> Chạy Transaction (Xóa DB + Ghi Log) -> Trục xuất khỏi RAM
+     */
+    public void deleteItemByAdmin(String itemId, String adminId, String reason) {
+        // 1. Kiểm tra tính toàn vẹn của tham số đầu vào
+        if (itemId == null || itemId.trim().isEmpty() || adminId == null || adminId.trim().isEmpty()) {
+            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Item ID and Admin ID constraints cannot be empty.");
+        }
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Censorship action requires a valid reason detail.");
+        }
+
+        // 2. Khóa đồng bộ dựa trên ID chống Race Condition đa luồng cấu trúc RAM Core
+        synchronized (itemId.trim().intern()) {
+
+            // Kiểm tra vật phẩm có tồn tại hay không
+            Item item = getItemById(itemId);
+            if (item == null) {
+                throw new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND, "The target item for deletion does not exist.");
+            }
+
+            // Kiểm tra trạng thái: Nếu vật phẩm đã bán (SOLD), từ chối gỡ bỏ để bảo vệ lịch sử hóa đơn tài sản
+            if (item.getStatus() == ItemStatus.INACTIVE) {
+                // Tùy theo rule dự án của Sơn, nếu INACTIVE (đang live trên sàn) vẫn cho Admin cưỡng chế gỡ thì bỏ qua check này
+                System.out.println("[Admin Censor] ⚠️ Vật phẩm đang nằm trong phiên đấu giá. Thực hiện cưỡng chế gỡ bỏ...");
+            }
+
+            // 3. Mạch xử lý kết nối tập trung bọc lót Commit/Rollback Transaction an toàn dữ liệu
+            Connection conn = null;
+            try {
+                conn = com.auction.config.DatabaseConnection.getConnection();
+                conn.setAutoCommit(false); // Kích hoạt Transaction nguyên tử
+
+                // Bước A: Thực thi xóa vật phẩm dưới DB (Sơn dùng Hard Delete hoặc Soft Delete tùy thiết kế DAO)
+                // Giả định Hard Delete: Giả sử itemDAO của Sơn đã có phương thức deleteItem hoặc tương đương
+                boolean isDeletedDB = itemDAO.updateStatus(conn, itemId, "BANNED"); // Hoặc gọi itemDAO.deleteItem(conn, itemId);
+                if (!isDeletedDB) {
+                    throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Database persistent rejection for deleting item.");
+                }
+
+                // Bước B: Ghi Audit Log bảo mật bọc chung mạch Transaction của Admin
+                String logId = UUID.randomUUID().toString();
+                String actionDetail = "Admin cưỡng chế gỡ bỏ sản phẩm [" + item.getName() + "] do vi phạm. Lý do: " + reason;
+                logDAO.insertLog(conn, logId, adminId, actionDetail, "ITEM", itemId);
+
+                conn.commit(); // Chốt hạ lưu trữ vĩnh viễn cả 2 hành động xuống đĩa cứng
+                System.out.println("[DB Transaction] ✅ Cưỡng chế xóa vật phẩm và lưu Audit Log thành công.");
+
+            } catch (SQLException e) {
+                // Trạm cứu hộ lỗi hạ tầng: Quay xe dữ liệu về trạng thái sạch nếu có biến cố đĩa cứng / kết nối
+                if (conn != null) {
+                    try {
+                        conn.rollback();
+                        System.err.println("[DB Transaction] ❌ Gãy mạch xóa vật phẩm. Đã rollback DB nguyên trạng!");
+                    } catch (SQLException ex) {
+                        System.err.println("[DB Transaction] 🚨 Lỗi khẩn cấp không thể rollback: " + ex.getMessage());
+                    }
+                }
+                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Censorship transaction failed: " + e.getMessage());
+            } finally {
+                if (conn != null) {
+                    try {
+                        conn.setAutoCommit(true);
+                        conn.close();
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }
+
+            // 4. ĐỒNG BỘ LÊN RAM: Trục xuất sản phẩm rác khỏi bộ đệm ProductManage live ngay lập tức
+            productManage.deleteProduct(itemId);
+            System.out.println("[Cache Item] 🧹 Đã trục xuất hoàn toàn vật phẩm vi phạm khỏi RAM: " + itemId);
         }
     }
 

@@ -94,15 +94,16 @@ public class ConnectionManage {
         if (sessions == null || sessions.isEmpty()) return;
 
         for (ClientSession session : sessions) {
-            try {
-                // Thực hiện bắn tin nhắn real-time về giao diện Client
-                session.sendMessage(message);
-            } catch (Exception e) {
+            boolean success = session.sendMessage(message);
+            if (!success) {
                 // Nếu bắn tin nhắn lỗi (chứng tỏ Socket này đã chết ngầm từ trước)
                 System.err.println("[Connection] ⚠️ Phát hiện kết nối ma của User [" + userId + "], tiến hành trục xuất...");
 
                 // Tự động tháo dỡ kết nối lỗi này ra khỏi Set ngay lập tức để giải phóng RAM
                 removeConnection(userId, session);
+                try {
+                    session.close();
+                } catch (Exception ignored) {}
             }
         }
     }

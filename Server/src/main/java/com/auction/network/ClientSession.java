@@ -58,11 +58,13 @@ public class ClientSession {
 
 
     // Hàm này để ConnectionManage có thể gọi để bắn tin nhắn real-time về UI
-    public void sendMessage(String jsonMessage) {
+    public boolean sendMessage(String jsonMessage) {
         if (out != null) {
             out.println(jsonMessage);
             out.flush();
+            return !out.checkError();
         }
+        return false;
     }
 
     // 1 session được coi là đã login khi có cả userID và role
@@ -133,6 +135,10 @@ public class ClientSession {
 
     public String getUsername() {
         return this.username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public void setCurrentAuctionId(String currentAuctionId) {

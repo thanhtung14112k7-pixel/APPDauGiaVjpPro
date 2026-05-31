@@ -14,7 +14,7 @@ import com.auction.exception.ValidationErrorCode;
 import com.auction.exception.ValidationException;
 import com.auction.network.ClientSession;
 import com.auction.service.ItemService;
-import com.google.gson.Gson;
+import com.auction.utils.GsonProvider;
 
 import java.util.List;
 
@@ -26,7 +26,7 @@ import java.util.List;
  * ownership before mutating item data.
  */
 public class ItemController {
-    private final Gson gson = new Gson();
+    private final com.google.gson.Gson gson = GsonProvider.getGson();
     private final ItemService itemService = new ItemService();
 
     public ItemDetailDTO createItem(String bodyJson, ClientSession session) {

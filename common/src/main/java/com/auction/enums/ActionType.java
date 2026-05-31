@@ -13,17 +13,19 @@ public enum ActionType {
     LOGOUT,
     CREATE_ITEM,
     UPDATE_ITEM,
-    DELETE_ITEM,
+    SELLER_DELETE_ITEM,
     GET_SELLER_ITEMS,
     GET_ITEM_DETAIL,
     GET_ACTIVE_AUCTIONS,        // lấy danh sách các phiên đáu giá đang mở hoặc đang chạy.
     GET_AUCTION_DETAIL,         // lấy chi tiết 1 phiên đáu giá theo auctioId
     CREATE_AUCTION,             // tạo phiên đấu giá mới, chỉ seller và admin được gọi
     PLACE_BID,                  // đặt giá vào 1 phiên dddassu giá, chỉ bidder
-    CANCEL_AUCTION,              // hủy phiên đấu giá, seller hoặc admin được gọi, sau này nên kiểm tra thêm Seller chỉ dc xóa của chính mình
+    SELLER_CANCEL_AUCTION,              // hủy phiên đấu giá, seller gọi
     BID_UPDATE,
     TIME_UPDATE,
     STATUS_UPDATED,
+    GET_AUCTION_BID_HISTORY, // lấy lịch sử đặt giá của một phiên đấu giá, chỉ bidder mới được gọi
+    GET_MY_BID_HISTORY, // lấy lịch sử đặt giá của một người dùng, chỉ bidder mới được gọi
 
     /**
      * Sự kiện: Người dùng đăng ký theo dõi phiên (Business State)
@@ -55,5 +57,17 @@ public enum ActionType {
      * Khi: leaveLiveRoom() trong AuctionService
      * Mục đích: Xóa ClientSession khỏi phòng + Broadcast viewer count giảm
      */
-    LIVE_EXITED
+    LIVE_EXITED,
+
+    // =========================================================================
+    // USER MANAGEMENT ACTIONS
+    // =========================================================================
+    GET_USER_PROFILE,           // lấy thông tin profile của người dùng hiện tại
+    DEPOSIT_MONEY,              // nạp tiền vào tài khoản (bidder)
+    WITHDRAW_MONEY,             // rút tiền từ tài khoản (bidder)
+    CMD_ADMIN_GET_USERS,         // xem danh sách user (admin only)
+    CMD_ADMIN_LOCK_USER,         // khóa tài khoản user (admin only)
+    CMD_ADMIN_GET_LOGS,          // xem danh sách log hệ thống (admin only)
+    CMD_ADMIN_CANCEL_AUCTION,     // hủy phiên đấu giá (admin only)
+    CMD_ADMIN_DELETE_ITEM,        // xóa vật phẩm (admin only)
 }

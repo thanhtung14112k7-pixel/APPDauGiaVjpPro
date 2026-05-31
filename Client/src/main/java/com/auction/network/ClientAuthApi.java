@@ -8,7 +8,7 @@ import com.auction.dto.SocketResponse;
 import com.auction.enums.ActionType;
 import com.auction.enums.UserRole;
 import com.auction.service.ClientSocketService;
-import com.google.gson.Gson;
+import com.auction.utils.GsonProvider;
 import com.google.gson.JsonObject;
 
 /**
@@ -18,7 +18,7 @@ import com.google.gson.JsonObject;
  * Mọi phản hồi từ Server đều là SocketResponse.
  */
 public class ClientAuthApi {
-    private final Gson gson = new Gson();
+    private final com.google.gson.Gson gson = GsonProvider.getGson();
 
     public SocketResponse login(String usernameOrEmail, String password) {
         LoginRequest request = new LoginRequest(usernameOrEmail, password);

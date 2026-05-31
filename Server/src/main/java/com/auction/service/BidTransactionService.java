@@ -6,14 +6,10 @@ import com.auction.dao.impl.BidTransactionDAOImpl;
 import com.auction.dao.impl.UserDAOImpl;
 import com.auction.dto.BidTransactionDTO;
 import com.auction.dto.PageDTO;
-import com.auction.exception.AuctionErrorCode;
-import com.auction.exception.AuctionException;
 import com.auction.exception.ValidationErrorCode;
 import com.auction.exception.ValidationException;
 import com.auction.models.Auction.BidTransaction;
 
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -23,33 +19,6 @@ public class BidTransactionService {
     private final BidTransactionDAO bidTransactionDAO = new BidTransactionDAOImpl();
     private final UserDAO userDAO = new UserDAOImpl();
 
-    /**
-     * Ghi nhận lượt đặt giá mới vào hệ thống
-     */
-    public void recordNewBid(BidTransaction bid) {
-        // 🔥 TỐI ƯU: Thiết lập hàng rào kiểm tra sâu bên trong thực thể (Deep Validation)
-        if (bid == null) {
-            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Bid transaction data must not be null.");
-        }
-        if (bid.getAuctionId() == null || bid.getAuctionId().trim().isEmpty() ||
-                bid.getBidderId() == null || bid.getBidderId().trim().isEmpty()) {
-            throw new ValidationException(ValidationErrorCode.MISSING_REQUIRED_FIELD, "Auction ID and Bidder ID inside transaction are required.");
-        }
-        if (bid.getAmount() <= 0) {
-            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Bid amount inside transaction must be greater than zero.");
-        }
-
-
-        // Tự mở kết nối ngắn hạn nếu chỉ chạy độc lập
-        try (Connection conn = com.auction.config.DatabaseConnection.getConnection()) {
-            boolean isSaved = bidTransactionDAO.insertBid(conn, bid); // 🛠️ SỬA: Truyền conn
-            if (!isSaved) {
-                throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Failed to persist bid transaction.");
-            }
-        } catch (SQLException e) {
-            throw new AuctionException(AuctionErrorCode.DATABASE_ERROR, "Database link failed at recordNewBid: " + e.getMessage());
-        }
-    }
 
     /**
      * LẤY LỊCH SỬ ĐẶT GIÁ THEO PHIÊN (PHÂN TRANG TRỌN GÓI)

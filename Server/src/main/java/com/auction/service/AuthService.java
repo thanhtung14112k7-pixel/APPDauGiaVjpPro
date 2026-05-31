@@ -9,15 +9,12 @@ import com.auction.exception.AuthErrorCode;
 import com.auction.dto.*;
 import com.auction.manage.UserManage;
 import com.auction.models.User.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Optional;
 
 public class AuthService {
-    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private final UserManage userManage = UserManage.getInstance();
     private final UserDAO userDAO = new UserDAOImpl(); // Tích hợp DAO
 

@@ -78,8 +78,9 @@ public class ClientItemApi {
      * Server an item bang status INACTIVE va tra SocketResponse.body = null.
      */
     public SocketResponse deleteItem(String itemId, String reason) {
-        DeleteItemRequest request = new DeleteItemRequest(itemId, reason);
-        return sendRequest(ActionType.DELETE_ITEM, request);
+        String userId = com.auction.service.SessionManager.getInstance().getCurrentUserId();
+        DeleteItemRequest request = new DeleteItemRequest(itemId, reason, userId);
+        return sendRequest(ActionType.SELLER_DELETE_ITEM, request);
     }
 
     /**

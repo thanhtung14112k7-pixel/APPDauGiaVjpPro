@@ -3,10 +3,7 @@ package com.auction.service;
 import com.auction.config.DatabaseConnection;
 import com.auction.dao.LogDAO;
 import com.auction.dao.impl.UserDAOImpl;
-import com.auction.dto.AdminDTO;
-import com.auction.dto.BidderDTO;
-import com.auction.dto.SellerDTO;
-import com.auction.dto.UserDTO;
+import com.auction.dto.*;
 import com.auction.enums.UserRole;
 import com.auction.enums.UserStatus;
 import com.auction.exception.AuthErrorCode;
@@ -41,7 +38,7 @@ class UserServiceTest {
     private UserService userService;
     private FakeUserDAO userDAO;
     private FakeLogDAO logDAO;
-    private ConnectionManage connectionManage; // Sử dụng thực thể thật bypass rào cản JDK 25
+    private ConnectionManage connectionManage;
 
     private MockedStatic<DatabaseConnection> mockedDbConnection;
     private Connection fakeConnection;
@@ -56,7 +53,6 @@ class UserServiceTest {
         injectField(userService, "userDAO", userDAO);
         injectField(userService, "logDAO", logDAO);
 
-        // 🔥 ĐỒNG BỘ ĐÁNH CHẶN JDK 25: Nạp thẳng thực thể mạng kết nối thật của hệ thống
         connectionManage = ConnectionManage.getInstance();
         injectField(userService, "connectionManage", connectionManage);
 
@@ -95,24 +91,20 @@ class UserServiceTest {
                 }
             }
 
-            // Dọn dẹp luôn bộ đệm Connection vật lý live để tránh nhiễm độc chéo trạng thái Online
             for (Field field : ConnectionManage.class.getDeclaredFields()) {
                 if (java.util.Map.class.isAssignableFrom(field.getType())) {
                     field.setAccessible(true);
-                    java.util.Map<?, ?> map = (java.util.Map<?, ?>) field.get(connectionManage);
+                    java.util.Map<Object, Object> map = (java.util.Map<Object, Object>) field.get(connectionManage);
                     if (map != null) map.clear();
                 } else if (java.util.Collection.class.isAssignableFrom(field.getType())) {
                     field.setAccessible(true);
-                    java.util.Collection<?> col = (java.util.Collection<?>) field.get(connectionManage);
+                    java.util.Collection<Object> col = (java.util.Collection<Object>) field.get(connectionManage);
                     if (col != null) col.clear();
                 }
             }
         } catch (Exception ignored) {}
     }
 
-    /**
-     * 🔥 KỸ THUẬT PHÒNG THỬ NGHIỆM: Đẩy dữ liệu mồi qua mặt containsKey/isUserOnline của ConnectionManage thật
-     */
     @SuppressWarnings("unchecked")
     private void setBidderOnline(String userId, boolean online) throws Exception {
         for (Field field : ConnectionManage.class.getDeclaredFields()) {
@@ -121,7 +113,6 @@ class UserServiceTest {
                 java.util.Map<Object, Object> map = (java.util.Map<Object, Object>) field.get(connectionManage);
                 if (map != null) {
                     if (online) {
-                        // 🔥 FIX DỨT ĐIỂM: Thay thế "ONLINE_TOKEN_PROXY" bằng HashSet trống để khớp với kiểu ép dữ liệu Set dưới cụm socket
                         map.put(userId, new java.util.HashSet<>());
                     } else {
                         map.remove(userId);
@@ -151,7 +142,7 @@ class UserServiceTest {
     }
 
     // =========================================================
-    // FAKE DAO (ĐÃ KHỚP CHỮ KÝ THAM SỐ CONNECTION & THROWS)
+    // FAKE DAO
     // =========================================================
 
     private static class FakeUserDAO extends UserDAOImpl {
@@ -159,6 +150,8 @@ class UserServiceTest {
         boolean withdrawAvailableBalanceResult = true;
         boolean updateStatusResult = true;
         User findByIdResult = null;
+        // 🔥 THÊM BIẾN NÀY: Để chủ động cấu hình tổng số user trả về khi test
+        long countTotalUsersResult = 3;
 
         String lastAddBalanceUserId;
         double lastAddBalanceAmount;
@@ -172,6 +165,12 @@ class UserServiceTest {
         List<User> paginatedUsers = new ArrayList<>();
         int lastPageSize;
         int lastOffset;
+
+        // 🔥 GHI ĐÈ THÊM HÀM NÀY: Chặn đứng không cho chọc xuống hàm DB thật nữa
+        @Override
+        public long countTotalUsers() {
+            return countTotalUsersResult;
+        }
 
         @Override
         public Optional<User> findById(String id) {
@@ -333,20 +332,18 @@ class UserServiceTest {
         assertWalletError(exception);
     }
 
-    // 🌟 TEST CASE THÊM MỚI: Chặn rút tiền khi số thâm hụt vượt số dư khả dụng trên RAM
     @Test
     void withdrawMoneyShouldThrowWhenBalanceIsInsufficient() {
-        userDAO.findByIdResult = sampleBidder("bidder-low-balance"); // Có sẵn 500.0 khả dụng
+        userDAO.findByIdResult = sampleBidder("bidder-low-balance");
 
         WalletException exception = assertThrows(WalletException.class, () -> userService.withdrawMoney("bidder-low-balance", 600.0));
         assertEquals(WalletErrorCode.INSUFFICIENT_BALANCE.getCode(), exception.getErrorCode());
     }
 
-    // 🌟 TEST CASE THÊM MỚI: Chặn rút tiền khi phát hiện tài khoản người dùng đang bị khóa (BANNED)
     @Test
     void withdrawMoneyShouldThrowWhenUserIsBanned() {
         Bidder bannedBidder = sampleBidder("bidder-banned");
-        bannedBidder.setStatus(UserStatus.BANNED); // Khóa tài khoản
+        bannedBidder.setStatus(UserStatus.BANNED);
         userDAO.findByIdResult = bannedBidder;
 
         WalletException exception = assertThrows(WalletException.class, () -> userService.withdrawMoney("bidder-banned", 100.0));
@@ -364,9 +361,9 @@ class UserServiceTest {
         assertEquals(100.0, userDAO.lastWithdrawAmount);
     }
 
-    // =========================================================
-    // getAdminUserDashboard()
-    // =========================================================
+    // =========================================================================
+    // 🛠️ ĐÃ ĐỒNG BỘ CHUẨN XÁC: Gọi hàm .getData() khớp với cấu trúc PageDTO mới
+    // =========================================================================
 
     @Test
     void getAdminUserDashboardShouldThrowWhenPageInvalid() {
@@ -384,10 +381,10 @@ class UserServiceTest {
     void getAdminUserDashboardShouldReturnEmptyListWhenDaoReturnsEmptyList() {
         userDAO.paginatedUsers = List.of();
 
-        List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        PageDTO<UserDTO> result = userService.getAdminUserDashboard(1, 10);
 
         assertNotNull(result);
-        assertTrue(result.isEmpty());
+        assertTrue(result.getData().isEmpty()); // 🔥 SỬA: Dùng .getData()
         assertEquals(10, userDAO.lastPageSize);
         assertEquals(0, userDAO.lastOffset);
     }
@@ -408,12 +405,13 @@ class UserServiceTest {
 
         userDAO.paginatedUsers = List.of(bidder);
 
-        List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        PageDTO<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        List<UserDTO> content = result.getData(); // 🔥 SỬA: Dùng .getData() thay cho .getContent()
 
-        assertEquals(1, result.size());
-        assertInstanceOf(BidderDTO.class, result.getFirst());
+        assertEquals(1, content.size());
+        assertInstanceOf(BidderDTO.class, content.getFirst());
 
-        BidderDTO dto = (BidderDTO) result.getFirst();
+        BidderDTO dto = (BidderDTO) content.getFirst();
         assertEquals("bidder-dashboard-1", dto.getId());
         assertEquals("bidder_bidder-dashboard-1", dto.getUsername());
         assertEquals("bidder-dashboard-1@example.com", dto.getEmail());
@@ -429,12 +427,13 @@ class UserServiceTest {
         Seller seller = sampleSeller("seller-dashboard-1");
         userDAO.paginatedUsers = List.of(seller);
 
-        List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        PageDTO<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        List<UserDTO> content = result.getData(); // 🔥 SỬA: Dùng .getData()
 
-        assertEquals(1, result.size());
-        assertInstanceOf(SellerDTO.class, result.getFirst());
+        assertEquals(1, content.size());
+        assertInstanceOf(SellerDTO.class, content.getFirst());
 
-        SellerDTO dto = (SellerDTO) result.getFirst();
+        SellerDTO dto = (SellerDTO) content.getFirst();
         assertEquals("seller-dashboard-1", dto.getId());
         assertEquals("seller_seller-dashboard-1", dto.getUsername());
         assertEquals("seller-dashboard-1@example.com", dto.getEmail());
@@ -450,12 +449,13 @@ class UserServiceTest {
         Admin admin = sampleAdmin("admin-dashboard-1");
         userDAO.paginatedUsers = List.of(admin);
 
-        List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        PageDTO<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        List<UserDTO> content = result.getData(); // 🔥 SỬA: Dùng .getData()
 
-        assertEquals(1, result.size());
-        assertInstanceOf(AdminDTO.class, result.getFirst());
+        assertEquals(1, content.size());
+        assertInstanceOf(AdminDTO.class, content.getFirst());
 
-        AdminDTO dto = (AdminDTO) result.getFirst();
+        AdminDTO dto = (AdminDTO) content.getFirst();
         assertEquals("admin-dashboard-1", dto.getId());
         assertEquals("admin_admin-dashboard-1", dto.getUsername());
         assertEquals("admin-dashboard-1@example.com", dto.getEmail());
@@ -471,12 +471,13 @@ class UserServiceTest {
 
         userDAO.paginatedUsers = List.of(bidder, seller, admin);
 
-        List<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        PageDTO<UserDTO> result = userService.getAdminUserDashboard(1, 10);
+        List<UserDTO> content = result.getData(); // 🔥 SỬA: Dùng .getData()
 
-        assertEquals(3, result.size());
-        assertInstanceOf(BidderDTO.class, result.get(0));
-        assertInstanceOf(SellerDTO.class, result.get(1));
-        assertInstanceOf(AdminDTO.class, result.get(2));
+        assertEquals(3, content.size());
+        assertInstanceOf(BidderDTO.class, content.get(0));
+        assertInstanceOf(SellerDTO.class, content.get(1));
+        assertInstanceOf(AdminDTO.class, content.get(2));
     }
 
     // =========================================================
@@ -514,18 +515,18 @@ class UserServiceTest {
         assertAuthError(exception);
     }
 
-    // 🌟 TEST CASE THÊM MỚI: Kiểm tra mạch kích hoạt ngắt Socket Online, trục xuất tài khoản BANNED khỏi RAM live
     @Test
     void lockUserAccountShouldForceDisconnectUserWhenOnline() throws Exception {
         userDAO.updateStatusResult = true;
 
         Bidder onlineUser = sampleBidder("user-online-123");
-        UserManage.getInstance().addUser(onlineUser); // Đưa lên bộ đệm RAM gài bẫy
-        setBidderOnline("user-online-123", true);    // Cấu hình mồi trạng thái Online thật
+        UserManage.getInstance().addUser(onlineUser);
+        setBidderOnline("user-online-123", true);
 
         assertDoesNotThrow(() -> userService.lockUserAccount("admin-1", "user-online-123", UserStatus.BANNED));
 
-        // Khẳng định chốt hạ: Phiên Online bắt buộc phải bị trục xuất rớt Socket khỏi Core RAM live tức thì
+        Thread.sleep(350);
+
         assertNull(UserManage.getInstance().getUser("user-online-123"));
         assertFalse(connectionManage.isUserOnline("user-online-123"));
     }

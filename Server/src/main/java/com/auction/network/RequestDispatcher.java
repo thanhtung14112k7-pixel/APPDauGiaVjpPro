@@ -1,42 +1,34 @@
 package com.auction.network;
 
-import com.auction.controller.AuctionController;
-import com.auction.controller.AuthController;
-import com.auction.controller.ItemController;
+import com.auction.controller.*;
 import com.auction.dto.*;
 import com.auction.enums.ActionType;
 import com.auction.exception.BaseException;
 import com.auction.manage.ConnectionManage;
 import com.auction.service.AuthorizationService;
-import com.google.gson.Gson;
+import com.auction.utils.GsonProvider;
 import com.google.gson.JsonSyntaxException;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.List;
 
 /**
- * RequestDispatcher là bộ điều phối request phía Server.
- * Nhiệm vụ:
- * - Nhận JSON từ ClientHandler.
- * - Parse JSON thành SocketRequest.
- * - Kiểm tra action hợp lệ.
- * - Kiểm tra phân quyền.
- * - Gọi đúng handler theo action.
- * - Trả kết quả về Client bằng SocketResponse.
+ * =========================================================================
+ * RequestDispatcher - Trung tâm điều phối và biên dịch gói tin phía Server
+ * =========================================================================
  */
 public class RequestDispatcher {
-    // 🔥 TỐI ƯU 1: Áp dụng Singleton Pattern (Double-checked locking) bảo vệ luồng khởi tạo
     private static volatile RequestDispatcher instance;
-    private final Gson gson = new Gson();
+    private final com.google.gson.Gson gson = GsonProvider.getGson();
 
     private final AuthController authController = new AuthController();
     private final AuctionController auctionController = new AuctionController();
     private final ItemController itemController = new ItemController();
+    private final UserController userController = new UserController();
+    private final AdminController adminController = new AdminController();
     private final AuthorizationService authorizationService = new AuthorizationService();
 
-    // Chuyển Constructor về private để cấm các class khác tự tiện "new"
     private RequestDispatcher() {
-        System.out.println("[RequestDispatcher] 🚀 Khởi tạo trung tâm điều phối và Thread Pool dùng chung.");
+        System.out.println("[RequestDispatcher] 🚀 Khởi tạo trung tâm điều phối hệ thống thành công.");
     }
 
     public static RequestDispatcher getInstance() {
@@ -51,22 +43,18 @@ public class RequestDispatcher {
         }
         return temp;
     }
+
     /**
-     * Điểm vào chính khi Server nhận được một dòng JSON từ Client.
+     * Điểm vào chính xử lý chuỗi JSON thô nhận được từ Socket Client.
      */
     public void processRequest(String requestJson, ClientSession session) {
-        // 🔥 THAY ĐỔI CHIẾN LƯỢC TOÀN DIỆN: Mượn hàng đợi đơn luồng của chính Session này để xử lý
-        // Request LOGIN gửi trước sẽ vào hàng đợi trước, LIVE_ENTERED gửi sau bắt buộc phải xếp hàng đứng đợi sau,
-        // Triệt hạ hoàn toàn lỗi Race Condition đảo lộn thứ tự hành động mạng!
         session.getSessionExecutor().submit(() -> {
             SocketRequest socketRequest = null;
             try {
                 socketRequest = gson.fromJson(requestJson, SocketRequest.class);
 
                 if (socketRequest == null || isBlank(socketRequest.getAction().toString())) {
-                    sendFailure(session, null, null,
-                            "Request không hợp lệ.",
-                            "BAD_REQUEST");
+                    sendFailure(session, null, null, "Request không hợp lệ.", "BAD_REQUEST");
                     return;
                 }
 
@@ -74,179 +62,183 @@ public class RequestDispatcher {
                 String action = socketRequest.getAction().toString();
 
                 if (actionType == null) {
-                    sendFailure(session, socketRequest,
-                            "Action không được hỗ trợ.",
-                            "UNSUPPORTED_ACTION");
+                    sendFailure(session, socketRequest, "Action không được hỗ trợ.", "UNSUPPORTED_ACTION");
                     return;
                 }
 
-                // Kiểm tra phân quyền cưỡng chế dựa trên Exception
+                // Kiểm tra phân quyền dựa trên Action chuỗi và Session
                 authorizationService.canAccess(action, session);
 
                 switch (actionType) {
-                    case LOGIN:
-                        handleLogin(socketRequest, session);
-                        break;
+                    case LOGIN -> handleLogin(socketRequest, session);
+                    case REGISTER -> handleRegister(socketRequest, session);
+                    case LOGOUT -> handleLogout(socketRequest, session);
 
-                    case REGISTER:
-                        handleRegister(socketRequest, session);
-                        break;
+                    // PHÂN HỆ VẬT PHẨM (End-user)
+                    case CREATE_ITEM -> handleCreateItem(socketRequest, session);
+                    case UPDATE_ITEM -> handleUpdateItem(socketRequest, session);
+                    case GET_SELLER_ITEMS -> handleGetSellerItems(socketRequest, session);
+                    case GET_ITEM_DETAIL -> handleGetItemDetail(socketRequest, session);
+                    case SELLER_DELETE_ITEM -> handleDeleteItem(socketRequest, session);
 
-                    case LOGOUT:
-                        handleLogout(socketRequest, session);
-                        break;
-
-                    case CREATE_ITEM:
-                        handleCreateItem(socketRequest, session);
-                        break;
-
-                    case UPDATE_ITEM:
-                        handleUpdateItem(socketRequest, session);
-                        break;
-
-                    case DELETE_ITEM:
-                        handleDeleteItem(socketRequest, session);
-                        break;
-
-                    case GET_SELLER_ITEMS:
-                        handleGetSellerItems(socketRequest, session);
-                        break;
-
-                    case GET_ITEM_DETAIL:
-                        handleGetItemDetail(socketRequest, session);
-                        break;
-
-                    case GET_ACTIVE_AUCTIONS:
-                        handleGetActiveAuctions(socketRequest, session);
-                        break;
-
-                    case GET_AUCTION_DETAIL:
-                        handleGetAuctionDetail(socketRequest, session);
-                        break;
-
-                    case CREATE_AUCTION:
-                        handleCreateAuction(socketRequest, session);
-                        break;
-
-                    case PLACE_BID:
-                        handlePlaceBid(socketRequest, session);
-                        break;
+                    // PHÂN HỆ ĐẤU GIÁ LIVE (End-user)
+                    case GET_ACTIVE_AUCTIONS -> handleGetActiveAuctions(socketRequest, session);
+                    case GET_AUCTION_DETAIL -> handleGetAuctionDetail(socketRequest, session);
+                    case CREATE_AUCTION -> handleCreateAuction(socketRequest, session);
+                    case PLACE_BID -> handlePlaceBid(socketRequest, session);
+                    case LIVE_ENTERED -> handleLiveEntered(socketRequest, session);
+                    case LIVE_EXITED -> handleLiveExited(socketRequest, session);
+                    case AUCTION_SUBSCRIBED -> handleAuctionSubscribed(socketRequest, session);
+                    case AUCTION_UNSUBSCRIBED -> handleAuctionUnsubscribed(socketRequest, session);
+                    case SELLER_CANCEL_AUCTION -> handleCancelAuction(socketRequest, session);
 
                     // ================================================================
-                    // 🔥 ĐỒNG BỘ 4 HÀM MẠNG MỚI ĐÍCH DANH 1:1 THEO KIẾN TRÚC MỚI
+                    // 🛡️ PHÂN HỆ NGHIỆP VỤ USER (UserController)
                     // ================================================================
-                    case LIVE_ENTERED:
-                        // Người dùng mở màn hình chi tiết, cắm socket xem live
-                        handleLiveEntered(socketRequest, session);
-                        break;
+                    case GET_USER_PROFILE -> handleGetUserProfile(socketRequest, session);
+                    case DEPOSIT_MONEY -> handleDepositMoney(socketRequest, session);
+                    case WITHDRAW_MONEY -> handleWithdrawMoney(socketRequest, session);
 
-                    case LIVE_EXITED:
-                        // Người dùng đóng màn hình chi tiết, tháo socket live
-                        handleLiveExited(socketRequest, session);
-                        break;
+                    // ================================================================
+                    // 🛠️ PHÂN HỆ QUẢN TRỊ CAO CẤP (AdminController)
+                    // ================================================================
+                    case CMD_ADMIN_GET_USERS -> handleAdminGetUsers(socketRequest, session);
+                    case CMD_ADMIN_LOCK_USER -> handleAdminLockUser(socketRequest, session);
+                    case CMD_ADMIN_CANCEL_AUCTION -> handleAdminCancelAuction(socketRequest, session);
+                    case CMD_ADMIN_DELETE_ITEM -> handleAdminDeleteItem(socketRequest, session);
+                    case CMD_ADMIN_GET_LOGS -> handleAdminGetLogs(socketRequest, session);
 
-                    case AUCTION_SUBSCRIBED:
-                        // Người dùng ấn nút "Theo dõi" nền lưu trữ DB/RAM vĩnh viễn
-                        handleAuctionSubscribed(socketRequest, session);
-                        break;
+                    // Nhánh xử lý lịch sử phòng đấu giá (Ai cũng xem được)
+                    case GET_AUCTION_BID_HISTORY -> handleGetAuctionBidHistory(socketRequest, session);
 
-                    case AUCTION_UNSUBSCRIBED:
-                        // Người dùng ấn nút "Hủy theo dõi" giải phóng DB/RAM
-                        handleAuctionUnsubscribed(socketRequest, session);
-                        break;
+                    // Nhánh xử lý lịch sử cá nhân (Bảo mật - Rút bidderId từ session ra truyền vào)
+                    case GET_MY_BID_HISTORY -> handleGetMyBidHistory(socketRequest, session);
 
-                    case CANCEL_AUCTION:
-                        handleCancelAuction(socketRequest, session);
-                        break;
-
-                    default:
-                        sendFailure(session, socketRequest,
-                                "Action không được hỗ trợ.",
-                                "UNSUPPORTED_ACTION");
-                        break;
+                    default -> sendFailure(session, socketRequest, "Action không được hỗ trợ.", "UNSUPPORTED_ACTION");
                 }
 
             } catch (JsonSyntaxException e) {
                 sendFailure(session, socketRequest, "JSON request không hợp lệ.", "INVALID_JSON");
-
             } catch (BaseException e) {
-                // 🔥 HỨNG TẬP TRUNG TOÀN HỆ THỐNG LỖI NGHIỆP VỤ
                 System.err.println("[Central Guard] 🚨 Lỗi nghiệp vụ xảy ra lúc [" + e.getTimestamp()
                         + "] | Code: " + e.getErrorCode() + " | Chi tiết: " + e.getMessage());
                 sendFailure(session, socketRequest, e.getMessage(), e.getErrorCode());
-
             } catch (Exception e) {
-                // Chốt chặn cuối bảo vệ vòng lặp Server không bao giờ crash/sập kết nối ngoài ý muốn
                 System.err.println("[Fatal System Error] 💥 Sự cố hệ thống nghiêm trọng:");
                 e.printStackTrace();
-                sendFailure(session, socketRequest,
-                        "Lỗi xử lý hệ thống.",
-                        "SERVER_ERROR");
+                sendFailure(session, socketRequest, "Lỗi xử lý hệ thống.", "SERVER_ERROR");
             }
         });
     }
 
-    /**
-     * Xử lý LOGIN.
-     */
+    private void handleGetMyBidHistory(SocketRequest socketRequest, ClientSession session){
+        String bidderId = session.getUserId(); // An toàn tuyệt đối
+        GetBidderHistoryRequest request = gson.fromJson(socketRequest.getBody(), GetBidderHistoryRequest.class);
+        PageDTO<BidTransactionDTO> result = userController.getMyBidHistory(bidderId, request);
+        sendSuccess(session, socketRequest, "Tải lịch sử đấu giá cá nhân thành công.", result);
+    }
+
+    private void handleGetAuctionBidHistory(SocketRequest socketRequest, ClientSession session){
+        GetAuctionBidsRequest request = gson.fromJson(socketRequest.getBody(), GetAuctionBidsRequest.class);
+        PageDTO<BidTransactionDTO> result = auctionController.getAuctionBidHistory(request);
+        sendSuccess(session, socketRequest, "Tải lịch sử đặt giá thành công.", result);
+    }
+
+
+
+    // =========================================================================
+    // 🛡️ HANDLERS CHO USERCONTROLLER (Đã đồng bộ tham số sạch)
+    // =========================================================================
+
+    private void handleGetUserProfile(SocketRequest socketRequest, ClientSession session) {
+        String userId = session.getUserId(); // Bốc userId an toàn tại tầng mạng
+
+        UserDTO profile = userController.getUserProfile(userId);
+        sendSuccess(session, socketRequest, "Lấy thông tin profile thành công.", profile);
+    }
+
+    private void handleDepositMoney(SocketRequest socketRequest, ClientSession session) {
+        String userId = session.getUserId();
+        // Tầng mạng lo trọn gói việc dịch gói tin JSON sang DTO
+        DepositRequest request = gson.fromJson(socketRequest.getBody(), DepositRequest.class);
+
+        UserDTO updatedProfile = userController.depositMoney(userId, request);
+        sendSuccess(session, socketRequest, "Nạp tiền vào tài khoản thành công.", updatedProfile);
+    }
+
+    private void handleWithdrawMoney(SocketRequest socketRequest, ClientSession session) {
+        String userId = session.getUserId();
+        WithdrawRequest request = gson.fromJson(socketRequest.getBody(), WithdrawRequest.class);
+
+        UserDTO updatedProfile = userController.withdrawMoney(userId, request);
+        sendSuccess(session, socketRequest, "Rút tiền từ tài khoản thành công.", updatedProfile);
+    }
+
+    //AdminController
+
+    private void handleAdminGetUsers(SocketRequest socketRequest, ClientSession session) {
+        GetUserDashboardRequest request = gson.fromJson(socketRequest.getBody(), GetUserDashboardRequest.class);
+        PageDTO<UserDTO> dashboard = adminController.getUsersDashboard(request);
+        sendSuccess(session, socketRequest, "Tải danh sách người dùng thành công.", dashboard);
+    }
+
+    private void handleAdminLockUser(SocketRequest socketRequest, ClientSession session) {
+        String adminId = session.getUserId();
+        LockUserAccountRequest request = gson.fromJson(socketRequest.getBody(), LockUserAccountRequest.class);
+        adminController.lockUserAccount(adminId, request);
+        sendSuccess(session, socketRequest, "Cưỡng chế khóa tài khoản người dùng thành công.", null);
+    }
+
+    private void handleAdminCancelAuction(SocketRequest socketRequest, ClientSession session) {
+        String adminId = session.getUserId();
+        CancelAuctionRequest request = gson.fromJson(socketRequest.getBody(), CancelAuctionRequest.class);
+        adminController.cancelAuction(adminId, request);
+        sendSuccess(session, socketRequest, "Cưỡng chế hủy phiên đấu giá thành công.", null);
+    }
+
+    private void handleAdminDeleteItem(SocketRequest socketRequest, ClientSession session) {
+        String adminId = session.getUserId();
+        DeleteItemRequest request = gson.fromJson(socketRequest.getBody(), DeleteItemRequest.class);
+        adminController.deleteItem(adminId, request);
+        sendSuccess(session, socketRequest, "Gỡ bỏ vật phẩm vi phạm thành công.", null);
+    }
+
+    private void handleAdminGetLogs(SocketRequest socketRequest, ClientSession session) {
+        GetAuditLogsRequest request = gson.fromJson(socketRequest.getBody(), GetAuditLogsRequest.class);
+        PageDTO<ActionLogDTO> logs = adminController.getAuditLogs(request);
+        sendSuccess(session, socketRequest, "Tải danh sách nhật ký kiểm toán hệ thống thành công.", logs);
+    }
+
+    //AuthController
     private void handleLogin(SocketRequest socketRequest, ClientSession session) {
         LoginRequest loginRequest = gson.fromJson(socketRequest.getBody(), LoginRequest.class);
-
         LoginResultDTO result = authController.login(loginRequest);
         UserDTO user = result.getUser();
-
         session.setUserId(user.getId());
         session.setRole(user.getRole());
-
+        session.setUsername(user.getUsername());
         ConnectionManage.getInstance().registerConnection(user.getId(), session);
-
         sendSuccess(session, socketRequest, "Đăng nhập thành công.", result);
     }
 
-    /**
-     * Xử lý REGISTER.
-     */
     private void handleRegister(SocketRequest socketRequest, ClientSession session) {
         RegisterRequest registerRequest = gson.fromJson(socketRequest.getBody(), RegisterRequest.class);
-
         UserDTO user = authController.register(registerRequest);
-
         sendSuccess(session, socketRequest, "Đăng ký thành công.", user);
     }
 
-    /**
-     * Xử lý LOGOUT.
-     */
     private void handleLogout(SocketRequest socketRequest, ClientSession session) {
         String userId = session.getUserId();
-
         if (userId == null) {
-            sendFailure(session, socketRequest,
-                    "User is not logged in on this session.",
-                    "AUT_PERM_000");
+            sendFailure(session, socketRequest, "User is not logged in on this session.", "AUT_PERM_000");
             return;
         }
-
         authController.logout(userId);
         sendSuccess(session, socketRequest, "Đăng xuất thành công.", null);
         session.close();
     }
 
-    /**
-     * Routes item creation through the item controller so the client never calls service/DAO directly.
-     */
-    private void handleCreateItem(SocketRequest socketRequest, ClientSession session) {
-        Object result = itemController.createItem(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Tao san pham thanh cong.", result);
-    }
-
-    /**
-     * Routes item update and returns the refreshed detail DTO to the client.
-     */
-    private void handleUpdateItem(SocketRequest socketRequest, ClientSession session) {
-        Object result = itemController.updateItem(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Cap nhat san pham thanh cong.", result);
-    }
+    //ItemController
 
     /**
      * Routes item deletion as a status change instead of letting the client touch persistence.
@@ -256,138 +248,111 @@ public class RequestDispatcher {
         sendSuccess(session, socketRequest, "Xoa san pham thanh cong.", null);
     }
 
-    /**
-     * Returns the item list owned by the current seller session.
-     */
+    private void handleCreateItem(SocketRequest socketRequest, ClientSession session) {
+        Object result = itemController.createItem(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Tao san pham thanh cong.", result);
+    }
+
+    private void handleUpdateItem(SocketRequest socketRequest, ClientSession session) {
+        Object result = itemController.updateItem(socketRequest.getBody(), session);
+        sendSuccess(session, socketRequest, "Cap nhat san pham thanh cong.", result);
+    }
+
     private void handleGetSellerItems(SocketRequest socketRequest, ClientSession session) {
         Object result = itemController.getSellerItems(session);
         sendSuccess(session, socketRequest, "Lay danh sach san pham thanh cong.", result);
     }
 
-    /**
-     * Returns a detail DTO for the requested item.
-     */
     private void handleGetItemDetail(SocketRequest socketRequest, ClientSession session) {
         Object result = itemController.getItemDetail(socketRequest.getBody(), session);
         sendSuccess(session, socketRequest, "Lay chi tiet san pham thanh cong.", result);
     }
 
-    /**
-     * Lấy danh sách các phiên đấu giá đang hoạt động.
-     */
+    //AuctionController
     private void handleGetActiveAuctions(SocketRequest socketRequest, ClientSession session) {
-        Object result = auctionController.getActiveAuctions();
-        sendSuccess(session, socketRequest, "Lấy danh sách phiên đấu giá thành công.", result);
+        List<AuctionSummaryDTO> result = auctionController.getActiveAuctions();
+        sendSuccess(session, socketRequest, "Lấy danh sách thành công.", result);
     }
 
-    /**
-     * Lấy chi tiết một phiên đấu giá.
-     */
     private void handleGetAuctionDetail(SocketRequest socketRequest, ClientSession session) {
-        Object result = auctionController.getAuctionDetail(socketRequest.getBody());
-        sendSuccess(session, socketRequest, "Lấy chi tiết phiên đấu giá thành công.", result);
+        GetAuctionDetailRequest request = gson.fromJson(socketRequest.getBody(), GetAuctionDetailRequest.class);
+        AuctionDetailDTO result = auctionController.getAuctionDetail(request);
+        sendSuccess(session, socketRequest, "Lấy chi tiết thành công.", result);
     }
 
-    /**
-     * Tạo phiên đấu giá mới.
-     */
     private void handleCreateAuction(SocketRequest socketRequest, ClientSession session) {
-        auctionController.createAuction(socketRequest.getBody(), session);
+        String sellerId = session.getUserId();
+        CreateAuctionRequest request = gson.fromJson(socketRequest.getBody(), CreateAuctionRequest.class);
+        auctionController.createAuction(sellerId, request);
         sendSuccess(session, socketRequest, "Tạo phiên đấu giá thành công.", null);
     }
 
-    /**
-     * Đặt giá vào một phiên đấu giá.
-     */
     private void handlePlaceBid(SocketRequest socketRequest, ClientSession session) {
-        auctionController.placeBid(socketRequest.getBody(), session);
+        String bidderId = session.getUserId();
+        PlaceBidRequest request = gson.fromJson(socketRequest.getBody(), PlaceBidRequest.class);
+        auctionController.placeBid(bidderId, request);
         sendSuccess(session, socketRequest, "Đặt giá thành công.", null);
     }
 
-    /**
-     * 🔥 REFACTOR MỚI: Tiếp nhận yêu cầu cắm Socket mở màn hình trực tuyến (LIVE_ENTERED).
-     * Trả về dữ liệu DTO thô của phòng để Client kịp vẽ UI ngay lập tức.
-     */
     private void handleLiveEntered(SocketRequest socketRequest, ClientSession session) {
-        Object result = auctionController.joinLiveRoom(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Kết nối phòng trực tuyến thành công.", result);
+        String bidderId = session.getUserId();
+        AuctionSubscriptionRequest request = gson.fromJson(socketRequest.getBody(), AuctionSubscriptionRequest.class);
+        AuctionDetailDTO result = auctionController.joinLiveRoom(bidderId, request, session);
+        sendSuccess(session, socketRequest, "Vào phòng live thành công.", result);
     }
 
-    /**
-     * 🔥 REFACTOR MỚI: Tiếp nhận yêu cầu rút Socket khi đóng màn hình trực tuyến (LIVE_EXITED).
-     */
     private void handleLiveExited(SocketRequest socketRequest, ClientSession session) {
-        auctionController.leaveLiveRoom(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Thoát phòng trực tuyến thành công.", null);
+        String bidderId = session.getUserId();
+        AuctionSubscriptionRequest request = gson.fromJson(socketRequest.getBody(), AuctionSubscriptionRequest.class);
+        auctionController.leaveLiveRoom(bidderId, request, session);
+        sendSuccess(session, socketRequest, "Rời phòng live thành công.", null);
     }
 
-    /**
-     * 🔥 REFACTOR MỚI: Tiếp nhận nút bấm "Theo dõi" nền lưu DB/RAM vĩnh viễn (AUCTION_SUBSCRIBED).
-     */
     private void handleAuctionSubscribed(SocketRequest socketRequest, ClientSession session) {
-        auctionController.joinAuction(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Đăng ký theo dõi phiên đấu giá thành công.", null);
+        String bidderId = session.getUserId();
+        AuctionSubscriptionRequest request = gson.fromJson(socketRequest.getBody(), AuctionSubscriptionRequest.class);
+        auctionController.joinAuction(bidderId, request);
+        sendSuccess(session, socketRequest, "Theo dõi phiên thành công.", null);
     }
 
-    /**
-     * 🔥 REFACTOR MỚI: Tiếp nhận nút bấm "Hủy theo dõi" dọn rác DB/RAM + Socket (AUCTION_UNSUBSCRIBED).
-     */
     private void handleAuctionUnsubscribed(SocketRequest socketRequest, ClientSession session) {
-        auctionController.leaveAuction(socketRequest.getBody(), session);
-        sendSuccess(session, socketRequest, "Hủy theo dõi phiên đấu giá thành công.", null);
+        String bidderId = session.getUserId();
+        AuctionSubscriptionRequest request = gson.fromJson(socketRequest.getBody(), AuctionSubscriptionRequest.class);
+        auctionController.leaveAuction(bidderId, request, session);
+        sendSuccess(session, socketRequest, "Hủy theo dõi phiên thành công.", null);
     }
 
-    /**
-     * Hủy một phiên đấu giá.
-     */
     private void handleCancelAuction(SocketRequest socketRequest, ClientSession session) {
-        auctionController.cancelAuction(socketRequest.getBody(), session);
+        String sellerId = session.getUserId();
+        CancelAuctionRequest request = gson.fromJson(socketRequest.getBody(), CancelAuctionRequest.class);
+        auctionController.cancelAuctionBySeller(sellerId, request);
         sendSuccess(session, socketRequest, "Hủy phiên đấu giá thành công.", null);
     }
 
+    // =========================================================================
+    // UTILS METHODS
+    // =========================================================================
     private void sendSuccess(ClientSession session, SocketRequest request, String message, Object body) {
-        SocketResponse response = SocketResponse.success(
-                request.getRequestId(),
-                request.getAction(),
-                message,
-                body
-        );
-
+        SocketResponse response = SocketResponse.success(request.getRequestId(), request.getAction(), message, body);
         session.sendMessage(gson.toJson(response));
     }
 
     private void sendFailure(ClientSession session, SocketRequest request, String message, String errorCode) {
         String requestId = request == null ? null : request.getRequestId();
         String action = request == null ? null : (request.getAction() == null ? "UNKNOWN" : request.getAction().toString());
-
         sendFailure(session, requestId, action, message, errorCode);
     }
 
-    private void sendFailure(ClientSession session, String requestId, String action,
-                             String message, String errorCode) {
+    private void sendFailure(ClientSession session, String requestId, String action, String message, String errorCode) {
         ActionType actionType = parseAction(action);
-
-        if (actionType == null) {
-            actionType = ActionType.LOGIN;
-        }
-
-        SocketResponse response = SocketResponse.failure(
-                requestId,
-                actionType,
-                message,
-                errorCode
-        );
-
+        if (actionType == null) actionType = ActionType.LOGIN;
+        SocketResponse response = SocketResponse.failure(requestId, actionType, message, errorCode);
         session.sendMessage(gson.toJson(response));
     }
 
     private ActionType parseAction(String action) {
         if (action == null) return null;
-        try {
-            return ActionType.valueOf(action.trim());
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        try { return ActionType.valueOf(action.trim()); } catch (IllegalArgumentException e) { return null; }
     }
 
     private boolean isBlank(String value) {

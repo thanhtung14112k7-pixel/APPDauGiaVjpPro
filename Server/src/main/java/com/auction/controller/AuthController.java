@@ -2,6 +2,8 @@ package com.auction.controller;
 
 import com.auction.dto.*;
 import com.auction.exception.AuthenticationException;
+import com.auction.exception.ValidationErrorCode;
+import com.auction.exception.ValidationException;
 import com.auction.service.AuthService;
 import java.util.UUID;
 
@@ -38,16 +40,15 @@ public class AuthController {
       - AuthService ném AuthenticationException.
       - RequestDispatcher sẽ bắt exception và trả SocketResponse.failure().     */
     public LoginResultDTO login(LoginRequest request) throws AuthenticationException {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
 
-            // Gọi service để kiểm tra tên đăng nhập, mật khẩu
-            UserDTO user = authService.login(request.getUsernameOrEmail(), request.getPassword());
+        // Gọi service để kiểm tra tên đăng nhập, mật khẩu
+        UserDTO user = authService.login(request.getUsernameOrEmail(), request.getPassword());
 
-            // Tạo token tạm thời cho phiên đăng nhập.
-            // Sau này nếu làm bảo mật kỹ hơn có thể tạo TokenService riêng.
-            String token = UUID.randomUUID().toString();
-            return new LoginResultDTO(token, user);
-
-
+        // Tạo token tạm thời cho phiên đăng nhập.
+        // Sau này nếu làm bảo mật kỹ hơn có thể tạo TokenService riêng.
+        String token = UUID.randomUUID().toString();
+        return new LoginResultDTO(token, user);
     }
 
     /**
@@ -64,6 +65,7 @@ public class AuthController {
       - AuthService ném AuthenticationException.
      */
     public UserDTO register(RegisterRequest request) throws AuthenticationException {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
         return authService.register(
                 request.getUsername(),
                 request.getPassword(),

@@ -7,7 +7,7 @@ import com.auction.event.AuctionEvent;
 import com.auction.event.AuctionEventType;
 import com.auction.dto.BidTransactionDTO;
 import com.auction.dto.SocketResponse;
-import com.google.gson.Gson;
+import com.auction.utils.GsonProvider;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -42,7 +42,7 @@ public class LiveRoomManage implements AuctionObserver {
             = new ConcurrentHashMap<>();
 
     // JSON serializer - dùng để serialize SocketResponse
-    private static final Gson gson = new Gson();
+    private static final com.google.gson.Gson gson = GsonProvider.getGson();
 
     private LiveRoomManage() {
         System.out.println("[LiveRoom] 🚀 LiveRoomManage khởi động");
@@ -344,12 +344,11 @@ public class LiveRoomManage implements AuctionObserver {
 
         // Iterate từ CopyOnWriteArrayList - thread-safe
         for (ClientSession client : room) {
-            try {
-                client.sendMessage(jsonMessage);
-            } catch (Exception e) {
+            boolean success = client.sendMessage(jsonMessage);
+            if (!success) {
                 // Nếu gửi lỗi (client disconnect), tự động xóa khỏi phòng
                 System.err.println("[LiveRoom] ⚠️ Gửi message lỗi tới "
-                        + client.getUserId() + ": " + e.getMessage());
+                        + client.getUserId() + ", tự động dọn dẹp khỏi phòng.");
                 leaveRoom(auctionId, client);
             }
         }

@@ -1,271 +1,133 @@
 package com.auction.controller;
 
-import com.auction.dao.UserDAO;
-import com.auction.dao.impl.UserDAOImpl;
 import com.auction.dto.*;
-import com.auction.exception.AuctionErrorCode;
-import com.auction.exception.AuctionException;
+import com.auction.enums.UserRole;
 import com.auction.exception.ValidationErrorCode;
 import com.auction.exception.ValidationException;
-import com.auction.models.User.Bidder;
-import com.auction.models.User.User;
 import com.auction.network.ClientSession;
 import com.auction.service.AuctionService;
-import com.google.gson.Gson;
+import com.auction.service.BidTransactionService;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
  * =========================================================================
- * AuctionController - Bộ điều phối phân phối chức năng đấu giá phía Server
+ * AuctionController - Bộ điều phối chức năng đấu giá phía Server (Đã tối ưu)
  * =========================================================================
- * Vai trò:
- * - Tiếp nhận chuỗi JSON từ RequestDispatcher thô gửi lên.
- * - Giải mã (Parse) dữ liệu thô thành đối tượng Request DTO cụ thể.
- * - Xác thực định danh bảo mật của User thông qua ClientSession tin cậy.
- * - Điều phối gọi xuống tầng AuctionService để thực thi nghiệp vụ Core.
- * - Trả dữ liệu thuần (DTO/Void) về cho RequestDispatcher đóng gói SocketResponse.
  */
 public class AuctionController {
-    private final Gson gson = new Gson();
     private final AuctionService auctionService = new AuctionService();
-    private final UserDAO userDAO = new UserDAOImpl();
+    private final BidTransactionService bidTransactionService = new BidTransactionService();
 
     /**
-     * Lấy danh sách các phiên đấu giá đang hoạt động.
-     * Action tương ứng: GET_ACTIVE_AUCTIONS
+     * Lấy danh sách các phiên đấu giá đang hoạt động
+     * GET_ACTIVE_AUCTIONS
      */
     public List<AuctionSummaryDTO> getActiveAuctions() {
         return auctionService.getAllActiveAuctions();
     }
 
     /**
-     * Lấy chi tiết thông tin của một phiên đấu giá cụ thể.
-     * Action tương ứng: GET_AUCTION_DETAIL
+     * Lấy chi tiết thông tin của một phiên đấu giá cụ thể
+     * GET_AUCTION_DETAIL
      */
-    public AuctionDetailDTO getAuctionDetail(String bodyJson) {
-        GetAuctionDetailRequest request = parseBody(bodyJson, GetAuctionDetailRequest.class);
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
-
-        AuctionDetailDTO detail = auctionService.getAuctionDetail(request.getAuctionId());
-        if (detail == null) {
-            throw new AuctionException(AuctionErrorCode.AUCTION_NOT_FOUND);
-        }
-        return detail;
+    public AuctionDetailDTO getAuctionDetail(GetAuctionDetailRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        return auctionService.getAuctionDetail(request.getAuctionId());
     }
 
     /**
-     * Tạo một phiên đấu giá hoàn toàn mới.
-     * Action tương ứng: CREATE_AUCTION
-     * Bảo mật: Tự động bốc sellerId từ Session bảo mật, chặn Client giả mạo ID.
+     * Tạo một phiên đấu giá hoàn toàn mới (Dành cho Seller)
+     * CREATE_AUCTION
      */
-    public void createAuction(String bodyJson, ClientSession session) {
-        CreateAuctionRequest request = parseBody(bodyJson, CreateAuctionRequest.class);
-
-        String sellerId = requireLoggedInUserId(session);
-        requireText(request.getItemId(), "itemId must not be empty.");
-
+    public void createAuction(String sellerId, CreateAuctionRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
         if (request.getStepPrice() <= 0) {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "stepPrice must be greater than 0.");
         }
 
-        LocalDateTime startTime = parseDateTime(request.getStartTime(), "startTime");
-        LocalDateTime endTime = parseDateTime(request.getEndTime(), "endTime");
+        LocalDateTime startTime = LocalDateTime.parse(request.getStartTime());
+        LocalDateTime endTime = LocalDateTime.parse(request.getEndTime());
 
         if (!endTime.isAfter(startTime)) {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "endTime must be after startTime.");
         }
 
-        auctionService.createAuction(
-                request.getItemId(),
-                sellerId,
-                request.getStepPrice(),
-                startTime,
-                endTime
-        );
+        auctionService.createAuction(request.getItemId(), sellerId, request.getStepPrice(), startTime, endTime);
     }
 
     /**
-     * Thực hiện đặt một bước giá mới vào phiên đấu giá.
-     * Action tương ứng: PLACE_BID
+     * Thực hiện đặt một bước giá mới vào phiên đấu giá
+     * PLACE_BID
      */
-    public void placeBid(String bodyJson, ClientSession session) {
-        PlaceBidRequest request = parseBody(bodyJson, PlaceBidRequest.class);
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
-
+    public void placeBid(String bidderId, PlaceBidRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
         if (request.getAmount() <= 0) {
             throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "amount must be greater than 0.");
         }
-
-        Bidder bidder = getCurrentBidder(session);
-        auctionService.processBid(
-                bidder,
-                request.getAuctionId(),
-                request.getAmount()
-        );
+        // Truyền thẳng bidderId xuống, để Service tự quyết định việc lấy đối tượng từ RAM/DB
+        auctionService.processBid(bidderId, request.getAuctionId(), request.getAmount());
     }
 
     // =========================================================================
     // 🌐 NHÓM 1: CÁC TÁC VỤ GIAO DIỆN / MẠNG TRỰC TIẾP (STATELESS LIVE ROOM)
     // =========================================================================
 
-    /**
-     * Người dùng mở màn hình live bidding.
-     * Action tương ứng: LIVE_ENTERED
-     * Luồng: Cắm ClientSession vào LiveRoomManage để nhận realtime (bid, timer, viewer count).
-     */
-    public AuctionDetailDTO joinLiveRoom(String bodyJson, ClientSession session) {
-        AuctionSubscriptionRequest request = parseBody(bodyJson, AuctionSubscriptionRequest.class);
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
-
-        Bidder bidder = getCurrentBidder(session);
-
-        // Gọi luồng kích hoạt Socket vãng lai trực tiếp
-        auctionService.joinLiveRoom(
-                bidder,
-                request.getAuctionId(),
-                session
-        );
-
-        // Trả về dữ liệu chi tiết thô ngay lập tức để Client vẽ UI ban đầu
+    public AuctionDetailDTO joinLiveRoom(String bidderId, AuctionSubscriptionRequest request, ClientSession session) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        auctionService.joinLiveRoom(bidderId, request.getAuctionId(), session);
         return auctionService.getAuctionDetail(request.getAuctionId());
     }
 
-    /**
-     * Người dùng đóng màn hình live bidding (không hủy theo dõi phiên nền).
-     * Action tương ứng: LIVE_EXITED
-     * Luồng: Rút ClientSession khỏi LiveRoomManage, giữ business tracking nếu có.
-     */
-    public void leaveLiveRoom(String bodyJson, ClientSession session) {
-        AuctionSubscriptionRequest request = parseBody(bodyJson, AuctionSubscriptionRequest.class);
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
-
-        Bidder bidder = getCurrentBidder(session);
-
-        // Rút phích cắm truyền thông phòng
-        auctionService.leaveLiveRoom(
-                bidder,
-                request.getAuctionId(),
-                session
-        );
+    public void leaveLiveRoom(String bidderId, AuctionSubscriptionRequest request, ClientSession session) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        auctionService.leaveLiveRoom(bidderId, request.getAuctionId(), session);
     }
 
     // =========================================================================
     // 💼 NHÓM 2: CÁC TÁC VỤ NGHIỆP VỤ LƯU TRỮ BỀN VỮNG (STATEFUL BUSINESS STATE)
     // =========================================================================
 
-    /**
-     * Người dùng chủ động ấn nút "Theo dõi phiên" từ giao diện danh sách.
-     * Action tương ứng: JOIN_AUCTION (Hoặc mã đăng ký nền tương đương của bạn)
-     * Luồng: Đồng bộ lưu vết vĩnh viễn mối quan hệ xuống MySQL/RAM để nhận Toast đè giá ngầm.
-     */
-    public void joinAuction(String bodyJson, ClientSession session) {
-        AuctionSubscriptionRequest request = parseBody(bodyJson, AuctionSubscriptionRequest.class);
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
-
-        Bidder bidder = getCurrentBidder(session);
-
-        // Thực thi nghiệp vụ lưu vết bền vững không đụng tới kết nối dây mạng vật lý
-        auctionService.joinAuction(
-                bidder,
-                request.getAuctionId()
-        );
+    public void joinAuction(String bidderId, AuctionSubscriptionRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        auctionService.joinAuction(bidderId, request.getAuctionId());
     }
 
-    /**
-     * Người dùng ấn nút "Hủy theo dõi" (Unwatch) ra khỏi bộ sưu tập cá nhân.
-     * Action tương ứng: LEAVE_AUCTION (Hoặc mã hủy đăng ký nền tương đương của bạn)
-     * Luồng: Cắt đứt triệt để liên kết MySQL/RAM, bẫy dọn sạch Socket phòng hờ rò rỉ.
-     */
-    public void leaveAuction(String bodyJson, ClientSession session) {
-        AuctionSubscriptionRequest request = parseBody(bodyJson, AuctionSubscriptionRequest.class);
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
-
-        Bidder bidder = getCurrentBidder(session);
-
-        // Thực thi cưỡng chế hủy diệt và giải phóng rác tài nguyên toàn diện
-        auctionService.leaveAuction(
-                bidder,
-                request.getAuctionId(),
-                session
-        );
+    public void leaveAuction(String bidderId, AuctionSubscriptionRequest request, ClientSession session) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        auctionService.leaveAuction(bidderId, request.getAuctionId(), session);
     }
 
     // =========================================================================
-    // 🛡️ NHÓM 3: ĐIỀU PHỐI VÒNG ĐỜI VÀ TIỆN ÍCH BỔ TRỢ (UTILITIES)
+    // 🛡️ NHÓM 3: SELLER TỰ HỦY PHÒNG ĐẤU GIÁ CHÍNH CHỦ
     // =========================================================================
 
-    /**
-     * Cưỡng chế hủy bỏ một phiên đấu giá đang diễn ra.
-     * Action tương ứng: CANCEL_AUCTION
-     */
-    public void cancelAuction(String bodyJson, ClientSession session) {
-        CancelAuctionRequest request = parseBody(bodyJson, CancelAuctionRequest.class);
-        String userId = requireLoggedInUserId(session);
+    public void cancelAuctionBySeller(String sellerId, CancelAuctionRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        String reason = (request.getReason() == null || request.getReason().trim().isEmpty())
+                ? "Chủ phòng tự nguyện hủy."
+                : request.getReason();
 
-        requireText(request.getAuctionId(), "auctionId must not be empty.");
+        // Gọi hàm Service dùng chung với vai trò SELLER để kích hoạt hàng rào kiểm tra chính chủ
+        auctionService.cancelAuction(request.getAuctionId(), sellerId, UserRole.SELLER, reason);
+    }
 
-        String reason = request.getReason();
-        if (isBlank(reason)) {
-            reason = "No reason provided.";
+    public PageDTO<BidTransactionDTO> getAuctionBidHistory(GetAuctionBidsRequest request) {
+        if (request == null) throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Yêu cầu không hợp lệ.");
+        // 1. Kiểm tra tính toàn vẹn dữ liệu ngay tại cửa ngõ Controller
+        if (request.getAuctionId() == null || request.getAuctionId().trim().isEmpty()) {
+            throw new ValidationException(ValidationErrorCode.MISSING_REQUIRED_FIELD, "auctionId must not be empty.");
+        }
+        if (request.getPage() <= 0 || request.getPageSize() <= 0) {
+            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Page and pageSize must be positive.");
         }
 
-        auctionService.cancelAuction(
+        // 2. Điều phối gọi xuống Service chuyên trách đọc lịch sử phòng
+        return bidTransactionService.getAuctionBidsPaged(
                 request.getAuctionId(),
-                userId,
-                reason
+                request.getPage(),
+                request.getPageSize()
         );
-    }
-
-    private <T> T parseBody(String bodyJson, Class<T> requestType) {
-        if (isBlank(bodyJson)) {
-            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Request body must not be empty.");
-        }
-        T request = gson.fromJson(bodyJson, requestType);
-        if (request == null) {
-            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, "Request body is invalid.");
-        }
-        return request;
-    }
-
-    private String requireLoggedInUserId(ClientSession session) {
-        if (session == null || isBlank(session.getUserId())) {
-            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "User is not logged in.");
-        }
-        return session.getUserId();
-    }
-
-    private User getCurrentUser(ClientSession session) {
-        String userId = requireLoggedInUserId(session);
-        return userDAO.findById(userId)
-                .orElseThrow(() -> new AuctionException(AuctionErrorCode.ITEM_NOT_FOUND, "Current user not found."));
-    }
-
-    private Bidder getCurrentBidder(ClientSession session) {
-        User user = getCurrentUser(session);
-        if (!(user instanceof Bidder)) {
-            throw new ValidationException(ValidationErrorCode.BAD_REQUEST, "Current user is not a bidder.");
-        }
-        return (Bidder) user;
-    }
-
-    private LocalDateTime parseDateTime(String value, String fieldName) {
-        requireText(value, fieldName + " must not be empty.");
-        try {
-            return LocalDateTime.parse(value);
-        } catch (Exception e) {
-            throw new ValidationException(ValidationErrorCode.INVALID_PARAMETER, fieldName + " must be ISO local date time, for example 2026-05-18T10:30:00.");
-        }
-    }
-
-    private void requireText(String value, String message) {
-        if (isBlank(value)) {
-            throw new ValidationException(ValidationErrorCode.MISSING_REQUIRED_FIELD, message);
-        }
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
     }
 }

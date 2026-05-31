@@ -4,7 +4,7 @@ import com.auction.dto.SocketRequest;
 import com.auction.dto.SocketResponse;
 import com.auction.enums.ActionType;
 import com.auction.network.ClientNetworkManager;
-import com.google.gson.Gson;
+import com.auction.utils.GsonProvider;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,7 +36,7 @@ public class ClientSocketService {
 
     private static ClientSocketService instance;
 
-    private final Gson gson = new Gson();
+    private final com.google.gson.Gson gson = GsonProvider.getGson();
     private final PrintWriter writer;
     private final BufferedReader reader;
 

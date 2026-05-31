@@ -265,6 +265,26 @@ public class UserDAOImpl implements UserDAO {
         return users;
     }
 
+    /**
+     * Đếm tổng số người dùng trong hệ thống
+     */
+    @Override
+    public long countTotalUsers() {
+        String sql = "SELECT COUNT(*) FROM users WHERE deleted_at IS NULL";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Lỗi đếm tổng số người dùng: " + e.getMessage());
+        }
+        return 0;
+    }
+
     // 🔥 SỬA: Nhận Connection từ ngoài truyền vào (để bọc lót Transaction cưỡng chế Kick/Ban từ Admin), ném SQLException ra ngoài
     @Override
     public boolean updateStatus(Connection conn, String userId, String name) throws SQLException {
